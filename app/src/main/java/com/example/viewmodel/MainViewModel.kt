@@ -5,6 +5,8 @@ import androidx.lifecycle.AndroidViewModel
 import androidx.lifecycle.viewModelScope
 import com.example.manager.ApkInstallerManager
 import com.example.manager.DownloaderManager
+import com.example.manager.RemoteServerManager
+import com.example.manager.RemoteServerState
 import com.example.manager.SecurityAuditEngine
 import com.example.manager.SystemDiagnosticsManager
 import com.example.model.AppPackageItem
@@ -34,6 +36,17 @@ class MainViewModel(application: Application) : AndroidViewModel(application) {
   val downloaderManager = DownloaderManager(application)
   val auditEngine = SecurityAuditEngine(application)
   val diagnosticsManager = SystemDiagnosticsManager(application)
+
+  val remoteServerManager = RemoteServerManager(
+    context = application,
+    onRemoteDownloadRequested = { url, fileName ->
+      startUrlDownload(url, fileName)
+    },
+    diagnosticsProvider = {
+      _systemDiagnostic.value
+    }
+  )
+  val remoteServerState: StateFlow<RemoteServerState> = remoteServerManager.serverState
 
   private val _activeTab = MutableStateFlow(0)
   val activeTab: StateFlow<Int> = _activeTab.asStateFlow()
@@ -171,5 +184,22 @@ Shell Protection: com.protect2025
 
   fun runManifestAudit(text: String) {
     _manifestAuditResult.value = auditEngine.auditManifestText(text)
+  }
+
+  fun toggleRemoteServer(enable: Boolean) {
+    if (enable) {
+      remoteServerManager.startServer(8080)
+    } else {
+      remoteServerManager.stopServer()
+    }
+  }
+
+  fun triggerFindPhoneAlarm() {
+    remoteServerManager.playFindDeviceSound()
+  }
+
+  override fun onCleared() {
+    super.onCleared()
+    remoteServerManager.stopServer()
   }
 }

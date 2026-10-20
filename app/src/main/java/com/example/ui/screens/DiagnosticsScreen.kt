@@ -56,11 +56,22 @@ import com.example.ui.theme.EmeraldTertiary
 import com.example.ui.theme.RiskHigh
 import com.example.ui.theme.RiskSafe
 
+import androidx.compose.material3.Switch
+import androidx.compose.material3.SwitchDefaults
+import androidx.compose.material.icons.filled.Computer
+import androidx.compose.material.icons.filled.NotificationsActive
+import androidx.compose.material.icons.filled.ContentCopy
+import com.example.manager.RemoteServerState
+import android.widget.Toast
+
 @Composable
 fun DiagnosticsScreen(
   diagnostic: SystemDiagnostic?,
+  remoteServerState: RemoteServerState,
   onRefresh: () -> Unit,
-  onClearCache: () -> Unit
+  onClearCache: () -> Unit,
+  onToggleRemoteServer: (Boolean) -> Unit,
+  onPlayFindDeviceSound: () -> Unit
 ) {
   val context = LocalContext.current
 
@@ -164,6 +175,131 @@ fun DiagnosticsScreen(
                 Icon(Icons.Default.OpenInNew, contentDescription = null, modifier = Modifier.size(18.dp))
                 Spacer(modifier = Modifier.width(8.dp))
                 Text("Allow APK Installation in Settings", fontWeight = FontWeight.Bold)
+              }
+            }
+          }
+        }
+
+        Spacer(modifier = Modifier.height(14.dp))
+      }
+
+      // Remote Web Dashboard Card
+      item {
+        Card(
+          shape = RoundedCornerShape(14.dp),
+          colors = CardDefaults.cardColors(
+            containerColor = if (remoteServerState.isRunning) MaterialTheme.colorScheme.primaryContainer.copy(alpha = 0.25f) else MaterialTheme.colorScheme.surface
+          ),
+          modifier = Modifier.fillMaxWidth().testTag("remote_server_card")
+        ) {
+          Column(modifier = Modifier.padding(14.dp)) {
+            Row(
+              verticalAlignment = Alignment.CenterVertically,
+              horizontalArrangement = Arrangement.SpaceBetween,
+              modifier = Modifier.fillMaxWidth()
+            ) {
+              Row(verticalAlignment = Alignment.CenterVertically) {
+                Icon(
+                  Icons.Default.Computer,
+                  contentDescription = null,
+                  tint = if (remoteServerState.isRunning) MaterialTheme.colorScheme.primary else MaterialTheme.colorScheme.onSurfaceVariant,
+                  modifier = Modifier.size(22.dp)
+                )
+                Spacer(modifier = Modifier.width(8.dp))
+                Column {
+                  Text(
+                    text = "Web Remote Dashboard",
+                    fontWeight = FontWeight.Bold,
+                    fontSize = 14.sp,
+                    color = MaterialTheme.colorScheme.onSurface
+                  )
+                  Text(
+                    text = if (remoteServerState.isRunning) "Server Active • Accessible via Wi-Fi" else "Disabled • Run server for PC access",
+                    fontSize = 11.sp,
+                    color = if (remoteServerState.isRunning) RiskSafe else MaterialTheme.colorScheme.onSurfaceVariant
+                  )
+                }
+              }
+
+              Switch(
+                checked = remoteServerState.isRunning,
+                onCheckedChange = { onToggleRemoteServer(it) },
+                colors = SwitchDefaults.colors(checkedThumbColor = MaterialTheme.colorScheme.primary)
+              )
+            }
+
+            if (remoteServerState.isRunning) {
+              Spacer(modifier = Modifier.height(12.dp))
+
+              Box(
+                modifier = Modifier
+                  .fillMaxWidth()
+                  .clip(RoundedCornerShape(8.dp))
+                  .background(MaterialTheme.colorScheme.surfaceVariant)
+                  .padding(10.dp)
+              ) {
+                Column {
+                  Text(
+                    text = "Open in Computer / Laptop Browser:",
+                    fontSize = 11.sp,
+                    color = MaterialTheme.colorScheme.onSurfaceVariant
+                  )
+                  Spacer(modifier = Modifier.height(2.dp))
+                  Text(
+                    text = remoteServerState.serverUrl,
+                    fontWeight = FontWeight.Bold,
+                    fontSize = 14.sp,
+                    color = MaterialTheme.colorScheme.primary
+                  )
+                  Text(
+                    text = "Security Access PIN: ${remoteServerState.securityPin}",
+                    fontSize = 12.sp,
+                    fontWeight = FontWeight.SemiBold,
+                    color = EmeraldTertiary
+                  )
+                }
+              }
+
+              Spacer(modifier = Modifier.height(10.dp))
+
+              Row(
+                modifier = Modifier.fillMaxWidth(),
+                horizontalArrangement = Arrangement.spacedBy(8.dp)
+              ) {
+                OutlinedButton(
+                  onClick = {
+                    onPlayFindDeviceSound()
+                    Toast.makeText(context, "Testing alarm sound...", Toast.LENGTH_SHORT).show()
+                  },
+                  modifier = Modifier.weight(1f)
+                ) {
+                  Icon(Icons.Default.NotificationsActive, contentDescription = null, modifier = Modifier.size(16.dp))
+                  Spacer(modifier = Modifier.width(4.dp))
+                  Text("Test Alert", fontSize = 11.sp)
+                }
+
+                OutlinedButton(
+                  onClick = {
+                    val clipboard = context.getSystemService(Context.CLIPBOARD_SERVICE) as android.content.ClipboardManager
+                    val clip = android.content.ClipData.newPlainText("Server URL", remoteServerState.serverUrl)
+                    clipboard.setPrimaryClip(clip)
+                    Toast.makeText(context, "URL copied to clipboard!", Toast.LENGTH_SHORT).show()
+                  },
+                  modifier = Modifier.weight(1f)
+                ) {
+                  Icon(Icons.Default.ContentCopy, contentDescription = null, modifier = Modifier.size(16.dp))
+                  Spacer(modifier = Modifier.width(4.dp))
+                  Text("Copy URL", fontSize = 11.sp)
+                }
+              }
+
+              if (remoteServerState.lastCommand != "None") {
+                Spacer(modifier = Modifier.height(6.dp))
+                Text(
+                  text = "Last Action: ${remoteServerState.lastCommand}",
+                  fontSize = 10.sp,
+                  color = MaterialTheme.colorScheme.onSurfaceVariant
+                )
               }
             }
           }

@@ -43,6 +43,7 @@ import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.unit.dp
 import androidx.compose.ui.unit.sp
 import androidx.lifecycle.compose.collectAsStateWithLifecycle
+import com.example.manager.RemoteServerState
 import com.example.model.DownloadStatus
 import com.example.ui.components.AppDetailSheet
 import com.example.ui.screens.DiagnosticsScreen
@@ -74,6 +75,7 @@ class MainActivity : ComponentActivity() {
         val selectedFilter by viewModel.selectedFilter.collectAsStateWithLifecycle()
         val selectedAppDetail by viewModel.selectedAppForDetail.collectAsStateWithLifecycle()
         val systemDiagnostic by viewModel.systemDiagnostic.collectAsStateWithLifecycle()
+        val remoteServerState by viewModel.remoteServerState.collectAsStateWithLifecycle()
         val manifestAudit by viewModel.manifestAuditResult.collectAsStateWithLifecycle()
         val customManifestInput by viewModel.customManifestInput.collectAsStateWithLifecycle()
 
@@ -235,8 +237,11 @@ class MainActivity : ComponentActivity() {
 
               3 -> DiagnosticsScreen(
                 diagnostic = systemDiagnostic,
+                remoteServerState = remoteServerState,
                 onRefresh = { viewModel.refreshDiagnostics() },
-                onClearCache = { viewModel.clearAllCachedDownloads() }
+                onClearCache = { viewModel.clearAllCachedDownloads() },
+                onToggleRemoteServer = { viewModel.toggleRemoteServer(it) },
+                onPlayFindDeviceSound = { viewModel.triggerFindPhoneAlarm() }
               )
             }
 

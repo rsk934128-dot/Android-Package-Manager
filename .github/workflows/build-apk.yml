@@ -71,7 +71,7 @@ jobs:
           chmod +x gradlew
 
       - name: Build Debug APK
-        run: ./gradlew assembleDebug --no-daemon --no-configuration-cache --stacktrace -Dorg.gradle.jvmargs="-Xmx3g" -Dorg.gradle.workers.max=2
+        run: ./gradlew assembleDebug --no-daemon --no-configuration-cache --stacktrace -Dorg.gradle.jvmargs="-Xmx3g -Djava.awt.headless=true" -Dorg.gradle.workers.max=2
 
       - name: Upload APK to GitHub Artifacts
         uses: actions/upload-artifact@v4

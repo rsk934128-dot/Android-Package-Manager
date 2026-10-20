@@ -25,16 +25,23 @@ jobs:
           distribution: 'temurin'
           java-version: '21'
 
-      - name: Setup Android SDK
-        uses: android-actions/setup-android@v3
+      - name: Setup Gradle
+        uses: gradle/actions/setup-gradle@v3
 
-      - name: Accept Android SDK Licenses
+      - name: Configure Android SDK & Environment
         run: |
-          yes | sdkmanager --licenses || true
-
-      - name: Prepare Signing Keystore and Environment
-        run: |
-          # Restore debug.keystore from base64
+          # Use GitHub pre-installed Android SDK
+          export ANDROID_HOME="${ANDROID_HOME:-/usr/local/lib/android/sdk}"
+          export ANDROID_SDK_ROOT="${ANDROID_SDK_ROOT:-/usr/local/lib/android/sdk}"
+          echo "ANDROID_HOME=$ANDROID_HOME" >> $GITHUB_ENV
+          echo "ANDROID_SDK_ROOT=$ANDROID_SDK_ROOT" >> $GITHUB_ENV
+          
+          # Accept licenses automatically
+          mkdir -p ~/.android
+          touch ~/.android/repositories.cfg
+          yes | $ANDROID_HOME/cmdline-tools/latest/bin/sdkmanager --licenses 2>/dev/null || true
+          
+          # Restore debug.keystore from base64 if present
           if [ -f debug.keystore.base64 ]; then
             base64 -d debug.keystore.base64 > debug.keystore
             echo "debug.keystore successfully restored from base64."
@@ -43,7 +50,7 @@ jobs:
           # Create empty .env to satisfy Secrets Gradle Plugin
           touch .env
           
-          # Grant executable permissions to Gradle wrapper
+          # Ensure gradlew executable
           chmod +x gradlew
 
       - name: Build Debug APK with Gradle Wrapper

@@ -28,35 +28,50 @@ jobs:
       - name: Setup Gradle
         uses: gradle/actions/setup-gradle@v3
 
-      - name: Configure Android SDK and Environment
+      - name: Configure Android SDK, Keystore, and Environment
         run: |
-          # Detect GitHub pre-installed Android SDK location
+          # 1. Detect GitHub pre-installed Android SDK
           SDK_DIR="${ANDROID_HOME:-${ANDROID_SDK_ROOT:-/usr/local/lib/android/sdk}}"
           echo "ANDROID_HOME=$SDK_DIR" >> $GITHUB_ENV
           echo "ANDROID_SDK_ROOT=$SDK_DIR" >> $GITHUB_ENV
           echo "sdk.dir=$SDK_DIR" > local.properties
           
-          # Accept SDK licenses if sdkmanager exists
+          # 2. Accept SDK licenses
           mkdir -p ~/.android
           touch ~/.android/repositories.cfg
           if [ -x "$SDK_DIR/cmdline-tools/latest/bin/sdkmanager" ]; then
             yes | "$SDK_DIR/cmdline-tools/latest/bin/sdkmanager" --licenses 2>/dev/null || true
           fi
           
-          # Restore debug.keystore from base64
+          # 3. Restore or Generate debug.keystore
           if [ -f debug.keystore.base64 ]; then
-            base64 -d debug.keystore.base64 > debug.keystore
+            base64 -d debug.keystore.base64 > debug.keystore 2>/dev/null || true
             echo "debug.keystore restored from base64."
           fi
           
-          # Ensure .env exists for Secrets plugin
+          if [ ! -f debug.keystore ] || [ ! -s debug.keystore ]; then
+            echo "Generating fresh debug.keystore via keytool..."
+            keytool -genkey -v -keystore debug.keystore \
+              -alias androiddebugkey -keyalg RSA -keysize 2048 \
+              -validity 10000 -storepass android -keypass android \
+              -dname "CN=Android Debug,O=Android,C=US"
+          fi
+          
+          # Copy to app directory as fallback
+          cp debug.keystore app/debug.keystore
+          
+          # Verify keystore is valid
+          keytool -list -keystore debug.keystore -storepass android -alias androiddebugkey
+          echo "Keystore verified successfully."
+          
+          # 4. Create empty .env to satisfy Secrets plugin
           touch .env
           
-          # Make Gradle wrapper executable
+          # 5. Make Gradle wrapper executable
           chmod +x gradlew
 
       - name: Build Debug APK
-        run: ./gradlew assembleDebug --no-daemon --no-configuration-cache --stacktrace
+        run: ./gradlew assembleDebug --no-daemon --no-configuration-cache --stacktrace -Dorg.gradle.jvmargs="-Xmx3g" -Dorg.gradle.workers.max=2
 
       - name: Upload APK to GitHub Artifacts
         uses: actions/upload-artifact@v4

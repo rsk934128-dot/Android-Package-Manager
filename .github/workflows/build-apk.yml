@@ -28,32 +28,34 @@ jobs:
       - name: Setup Gradle
         uses: gradle/actions/setup-gradle@v3
 
-      - name: Configure Android SDK & Environment
+      - name: Configure Android SDK and Environment
         run: |
-          # Use GitHub pre-installed Android SDK
-          export ANDROID_HOME="${ANDROID_HOME:-/usr/local/lib/android/sdk}"
-          export ANDROID_SDK_ROOT="${ANDROID_SDK_ROOT:-/usr/local/lib/android/sdk}"
-          echo "ANDROID_HOME=$ANDROID_HOME" >> $GITHUB_ENV
-          echo "ANDROID_SDK_ROOT=$ANDROID_SDK_ROOT" >> $GITHUB_ENV
+          # Detect GitHub pre-installed Android SDK location
+          SDK_DIR="${ANDROID_HOME:-${ANDROID_SDK_ROOT:-/usr/local/lib/android/sdk}}"
+          echo "ANDROID_HOME=$SDK_DIR" >> $GITHUB_ENV
+          echo "ANDROID_SDK_ROOT=$SDK_DIR" >> $GITHUB_ENV
+          echo "sdk.dir=$SDK_DIR" > local.properties
           
-          # Accept licenses automatically
+          # Accept SDK licenses if sdkmanager exists
           mkdir -p ~/.android
           touch ~/.android/repositories.cfg
-          yes | $ANDROID_HOME/cmdline-tools/latest/bin/sdkmanager --licenses 2>/dev/null || true
-          
-          # Restore debug.keystore from base64 if present
-          if [ -f debug.keystore.base64 ]; then
-            base64 -d debug.keystore.base64 > debug.keystore
-            echo "debug.keystore successfully restored from base64."
+          if [ -x "$SDK_DIR/cmdline-tools/latest/bin/sdkmanager" ]; then
+            yes | "$SDK_DIR/cmdline-tools/latest/bin/sdkmanager" --licenses 2>/dev/null || true
           fi
           
-          # Create empty .env to satisfy Secrets Gradle Plugin
+          # Restore debug.keystore from base64
+          if [ -f debug.keystore.base64 ]; then
+            base64 -d debug.keystore.base64 > debug.keystore
+            echo "debug.keystore restored from base64."
+          fi
+          
+          # Ensure .env exists for Secrets plugin
           touch .env
           
-          # Ensure gradlew executable
+          # Make Gradle wrapper executable
           chmod +x gradlew
 
-      - name: Build Debug APK with Gradle Wrapper
+      - name: Build Debug APK
         run: ./gradlew assembleDebug --no-daemon --no-configuration-cache --stacktrace
 
       - name: Upload APK to GitHub Artifacts
@@ -64,7 +66,7 @@ jobs:
           if-no-files-found: error
           retention-days: 30
 
-      - name: Publish GitHub Release with APK
+      - name: Publish GitHub Release
         if: github.event_name == 'push' && (github.ref == 'refs/heads/main' || github.ref == 'refs/heads/master')
         continue-on-error: true
         uses: softprops/action-gh-release@v2

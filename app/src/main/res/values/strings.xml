@@ -1,0 +1,17 @@
+<resources>
+    <string name="app_name">AppPulse</string>
+    <string name="nav_downloader">Downloader</string>
+    <string name="nav_inspector">Package Inspector</string>
+    <string name="nav_diagnostics">Diagnostics</string>
+    <string name="nav_security_audit">Threat Audit</string>
+    <string name="download_title">APK Downloader &amp; Installer</string>
+    <string name="btn_download_install">Download &amp; Install</string>
+    <string name="btn_cancel">Cancel</string>
+    <string name="status_ready">Ready for task</string>
+    <string name="status_downloading">Downloading…</string>
+    <string name="status_completed">Download complete</string>
+    <string name="status_failed">Download failed</string>
+    <string name="threat_high">High Risk</string>
+    <string name="threat_medium">Medium Risk</string>
+    <string name="threat_safe">Verified Safe</string>
+</resources>

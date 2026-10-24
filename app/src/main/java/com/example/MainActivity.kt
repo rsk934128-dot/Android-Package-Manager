@@ -17,23 +17,39 @@ import androidx.compose.foundation.layout.size
 import androidx.compose.foundation.layout.width
 import androidx.compose.foundation.shape.CircleShape
 import androidx.compose.material.icons.Icons
+import androidx.compose.material.icons.filled.AccountCircle
 import androidx.compose.material.icons.filled.Apps
 import androidx.compose.material.icons.filled.Download
+import androidx.compose.material.icons.filled.Language
+import androidx.compose.material.icons.filled.Logout
 import androidx.compose.material.icons.filled.Memory
 import androidx.compose.material.icons.filled.Shield
 import androidx.compose.material3.Badge
+import androidx.compose.foundation.clickable
+import androidx.compose.foundation.layout.PaddingValues
+import androidx.compose.foundation.layout.height
+import androidx.compose.foundation.shape.RoundedCornerShape
+import androidx.compose.material.icons.filled.CloudDone
+import androidx.compose.material.icons.filled.CloudSync
 import androidx.compose.material3.BadgedBox
+import androidx.compose.material3.Button
+import androidx.compose.material3.ButtonDefaults
 import androidx.compose.material3.CenterAlignedTopAppBar
 import androidx.compose.material3.ExperimentalMaterial3Api
 import androidx.compose.material3.Icon
+import androidx.compose.material3.IconButton
 import androidx.compose.material3.MaterialTheme
 import androidx.compose.material3.NavigationBar
 import androidx.compose.material3.NavigationBarItem
 import androidx.compose.material3.Scaffold
+import androidx.compose.material3.Surface
 import androidx.compose.material3.Text
 import androidx.compose.material3.TopAppBarDefaults
 import androidx.compose.runtime.Composable
 import androidx.compose.runtime.getValue
+import androidx.compose.runtime.mutableStateOf
+import androidx.compose.runtime.remember
+import androidx.compose.runtime.setValue
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.draw.clip
@@ -44,12 +60,16 @@ import androidx.compose.ui.unit.dp
 import androidx.compose.ui.unit.sp
 import androidx.lifecycle.compose.collectAsStateWithLifecycle
 import com.example.manager.RemoteServerState
+import com.example.model.AppPackageItem
 import com.example.model.DownloadStatus
 import com.example.ui.components.AppDetailSheet
+import com.example.ui.components.CloneAppDialog
 import com.example.ui.screens.DiagnosticsScreen
 import com.example.ui.screens.DownloaderScreen
 import com.example.ui.screens.PackageInspectorScreen
 import com.example.ui.screens.ThreatAuditScreen
+import com.example.ui.screens.WebAppsScreen
+import com.example.ui.theme.EmeraldTertiary
 import com.example.ui.theme.MyApplicationTheme
 import com.example.ui.theme.RiskSafe
 import com.example.viewmodel.MainViewModel
@@ -62,6 +82,11 @@ class MainActivity : ComponentActivity() {
   override fun onCreate(savedInstanceState: Bundle?) {
     super.onCreate(savedInstanceState)
     enableEdgeToEdge()
+
+    val navTab = intent?.getIntExtra("nav_tab", -1) ?: -1
+    if (navTab >= 0) {
+      viewModel.setTab(navTab)
+    }
 
     setContent {
       MyApplicationTheme {
@@ -76,13 +101,25 @@ class MainActivity : ComponentActivity() {
         val selectedAppDetail by viewModel.selectedAppForDetail.collectAsStateWithLifecycle()
         val systemDiagnostic by viewModel.systemDiagnostic.collectAsStateWithLifecycle()
         val remoteServerState by viewModel.remoteServerState.collectAsStateWithLifecycle()
+        val batteryReport by viewModel.batteryReport.collectAsStateWithLifecycle()
         val manifestAudit by viewModel.manifestAuditResult.collectAsStateWithLifecycle()
         val customManifestInput by viewModel.customManifestInput.collectAsStateWithLifecycle()
+        val currentUser by viewModel.currentUser.collectAsStateWithLifecycle()
+        val cloudSyncStatus by viewModel.cloudSyncStatus.collectAsStateWithLifecycle()
+        val savedWebApps by viewModel.savedWebApps.collectAsStateWithLifecycle()
+        val activeWebApp by viewModel.activeWebApp.collectAsStateWithLifecycle()
+        val isWebAppBackgroundActive by viewModel.isWebAppBackgroundActive.collectAsStateWithLifecycle()
+        val webAppNotificationHistory by viewModel.webAppNotificationHistory.collectAsStateWithLifecycle()
+        val clonedApps by viewModel.clonedApps.collectAsStateWithLifecycle()
+        val activeClonedApp by viewModel.activeClonedApp.collectAsStateWithLifecycle()
+
+        var appToCloneForNativeDialog by remember { mutableStateOf<AppPackageItem?>(null) }
 
         Scaffold(
           modifier = Modifier.fillMaxSize(),
           topBar = {
-            CenterAlignedTopAppBar(
+            if (activeWebApp == null && activeClonedApp == null) {
+              CenterAlignedTopAppBar(
               title = {
                 Row(verticalAlignment = Alignment.CenterVertically) {
                   Box(
@@ -106,30 +143,108 @@ class MainActivity : ComponentActivity() {
                     fontSize = 19.sp,
                     color = MaterialTheme.colorScheme.onSurface
                   )
+                  Spacer(modifier = Modifier.width(8.dp))
+                  Surface(
+                    shape = RoundedCornerShape(12.dp),
+                    color = RiskSafe.copy(alpha = 0.15f)
+                  ) {
+                    Row(
+                      modifier = Modifier.padding(horizontal = 6.dp, vertical = 2.dp),
+                      verticalAlignment = Alignment.CenterVertically
+                    ) {
+                      Box(
+                        modifier = Modifier
+                          .size(6.dp)
+                          .clip(CircleShape)
+                          .background(RiskSafe)
+                      )
+                      Spacer(modifier = Modifier.width(4.dp))
+                      Text(
+                        text = "Healthy",
+                        fontSize = 10.sp,
+                        fontWeight = FontWeight.Bold,
+                        color = RiskSafe
+                      )
+                    }
+                  }
                 }
               },
               actions = {
-                Box(
-                  modifier = Modifier
-                    .padding(end = 12.dp)
-                    .clip(CircleShape)
-                    .background(RiskSafe.copy(alpha = 0.15f))
-                    .padding(horizontal = 10.dp, vertical = 4.dp),
-                  contentAlignment = Alignment.Center
-                ) {
-                  Row(verticalAlignment = Alignment.CenterVertically) {
-                    Box(
-                      modifier = Modifier
-                        .size(6.dp)
-                        .clip(CircleShape)
-                        .background(RiskSafe)
+                val user = currentUser
+                if (user != null) {
+                  Surface(
+                    shape = RoundedCornerShape(20.dp),
+                    color = MaterialTheme.colorScheme.primaryContainer,
+                    modifier = Modifier
+                      .padding(end = 8.dp)
+                      .testTag("user_profile_chip")
+                  ) {
+                    Row(
+                      verticalAlignment = Alignment.CenterVertically,
+                      modifier = Modifier.padding(horizontal = 8.dp, vertical = 4.dp)
+                    ) {
+                      Box(
+                        modifier = Modifier
+                          .size(20.dp)
+                          .clip(CircleShape)
+                          .background(MaterialTheme.colorScheme.primary),
+                        contentAlignment = Alignment.Center
+                      ) {
+                        Text(
+                          text = (user.displayName?.take(1) ?: user.email?.take(1) ?: "U").uppercase(),
+                          fontSize = 10.sp,
+                          fontWeight = FontWeight.Bold,
+                          color = MaterialTheme.colorScheme.onPrimary
+                        )
+                      }
+                      Spacer(modifier = Modifier.width(6.dp))
+                      Text(
+                        text = (user.displayName ?: user.email ?: "User").take(8),
+                        fontSize = 11.sp,
+                        fontWeight = FontWeight.SemiBold,
+                        color = MaterialTheme.colorScheme.onPrimaryContainer
+                      )
+                      Spacer(modifier = Modifier.width(4.dp))
+                      IconButton(
+                        onClick = {
+                          viewModel.signOut()
+                          Toast.makeText(this@MainActivity, "Signed out", Toast.LENGTH_SHORT).show()
+                        },
+                        modifier = Modifier
+                          .size(20.dp)
+                          .testTag("sign_out_button")
+                      ) {
+                        Icon(
+                          Icons.Default.Logout,
+                          contentDescription = "Sign Out",
+                          tint = MaterialTheme.colorScheme.onPrimaryContainer,
+                          modifier = Modifier.size(13.dp)
+                        )
+                      }
+                    }
+                  }
+                } else {
+                  Button(
+                    onClick = {
+                      viewModel.signInWithGoogle(this@MainActivity)
+                    },
+                    modifier = Modifier
+                      .padding(end = 8.dp)
+                      .height(32.dp)
+                      .testTag("google_sign_in_button"),
+                    contentPadding = PaddingValues(horizontal = 10.dp, vertical = 0.dp),
+                    colors = ButtonDefaults.buttonColors(containerColor = MaterialTheme.colorScheme.primary)
+                  ) {
+                    Icon(
+                      Icons.Default.AccountCircle,
+                      contentDescription = null,
+                      modifier = Modifier.size(16.dp)
                     )
-                    Spacer(modifier = Modifier.width(6.dp))
+                    Spacer(modifier = Modifier.width(4.dp))
                     Text(
-                      text = "SYSTEM ACTIVE",
-                      fontSize = 10.sp,
-                      fontWeight = FontWeight.Bold,
-                      color = RiskSafe
+                      text = "Sign In",
+                      fontSize = 11.sp,
+                      fontWeight = FontWeight.Bold
                     )
                   }
                 }
@@ -138,8 +253,10 @@ class MainActivity : ComponentActivity() {
                 containerColor = MaterialTheme.colorScheme.surface
               )
             )
-          },
-          bottomBar = {
+          }
+        },
+        bottomBar = {
+          if (activeWebApp == null && activeClonedApp == null) {
             NavigationBar(
               containerColor = MaterialTheme.colorScheme.surface,
               modifier = Modifier.testTag("bottom_nav_bar")
@@ -190,9 +307,31 @@ class MainActivity : ComponentActivity() {
                 label = { Text("Diagnostics") },
                 modifier = Modifier.testTag("nav_tab_diagnostics")
               )
+
+              NavigationBarItem(
+                selected = activeTab == 4,
+                onClick = { viewModel.setTab(4) },
+                icon = {
+                  BadgedBox(badge = {
+                    if (isWebAppBackgroundActive || clonedApps.isNotEmpty()) {
+                      Box(
+                        modifier = Modifier
+                          .size(7.dp)
+                          .clip(CircleShape)
+                          .background(EmeraldTertiary)
+                      )
+                    }
+                  }) {
+                    Icon(Icons.Default.Language, contentDescription = "Apps Cloner & Hub")
+                  }
+                },
+                label = { Text("Cloner & Hub") },
+                modifier = Modifier.testTag("nav_tab_webapps")
+              )
             }
           }
-        ) { innerPadding ->
+        }
+      ) { innerPadding ->
           Box(
             modifier = Modifier
               .fillMaxSize()
@@ -232,16 +371,78 @@ class MainActivity : ComponentActivity() {
                 auditResult = manifestAudit,
                 defaultSampleText = viewModel.defaultSampleAuditText,
                 onInputChanged = { viewModel.setManifestInput(it) },
-                onRunAudit = { viewModel.runManifestAudit(it) }
+                onRunAudit = { viewModel.runManifestAudit(it) },
+                onSaveToCloud = {
+                  if (currentUser == null) {
+                    Toast.makeText(this@MainActivity, "Please sign in with Google first", Toast.LENGTH_SHORT).show()
+                    viewModel.signInWithGoogle(this@MainActivity)
+                  } else {
+                    viewModel.syncCurrentThreatReportToCloud { success, msg ->
+                      Toast.makeText(this@MainActivity, msg, Toast.LENGTH_SHORT).show()
+                    }
+                  }
+                }
               )
 
               3 -> DiagnosticsScreen(
                 diagnostic = systemDiagnostic,
                 remoteServerState = remoteServerState,
-                onRefresh = { viewModel.refreshDiagnostics() },
+                batteryReport = batteryReport,
+                onRefresh = {
+                  viewModel.refreshDiagnostics()
+                  viewModel.refreshBatteryReport()
+                },
                 onClearCache = { viewModel.clearAllCachedDownloads() },
                 onToggleRemoteServer = { viewModel.toggleRemoteServer(it) },
-                onPlayFindDeviceSound = { viewModel.triggerFindPhoneAlarm() }
+                onPlayFindDeviceSound = { viewModel.triggerFindPhoneAlarm() },
+                onOpenBatteryOptimization = { pkg -> viewModel.openBatteryOptimizationSettings(pkg) },
+                onOpenAppDetails = { pkg -> viewModel.openAppDetailsSettings(pkg) },
+                onScanAndAlertDrain = { viewModel.scanAndNotifyHighDrainTasks(bypassCooldown = true) },
+                onSyncBatteryToCloud = {
+                  if (currentUser == null) {
+                    Toast.makeText(this@MainActivity, "Please sign in with Google first", Toast.LENGTH_SHORT).show()
+                    viewModel.signInWithGoogle(this@MainActivity)
+                  } else {
+                    viewModel.syncCurrentBatterySnapshotToCloud { success, msg ->
+                      Toast.makeText(this@MainActivity, msg, Toast.LENGTH_SHORT).show()
+                    }
+                  }
+                }
+              )
+
+              4 -> WebAppsScreen(
+                savedApps = savedWebApps,
+                activeApp = activeWebApp,
+                isBackgroundActive = isWebAppBackgroundActive,
+                notificationHistory = webAppNotificationHistory,
+                clonedApps = clonedApps,
+                activeClonedApp = activeClonedApp,
+                onOpenApp = { viewModel.openWebApp(it) },
+                onCloseApp = { viewModel.closeActiveWebApp() },
+                onAddApp = { name, url, category, keepAlive, desktopMode ->
+                  viewModel.addWebApp(name, url, category, keepAlive, desktopMode)
+                },
+                onDeleteApp = { viewModel.deleteWebApp(it) },
+                onToggleBackgroundService = { viewModel.toggleWebAppBackgroundService(it) },
+                onTriggerNotification = { appName, title, body, type ->
+                  viewModel.triggerWebNotification(appName, title, body, type)
+                },
+                onOpenClone = { viewModel.openClone(it) },
+                onCloseClone = { viewModel.closeActiveClone() },
+                onCloneWebApp = { app, name, badge, emoji, color ->
+                  viewModel.cloneWebApp(app, name, badge, emoji, color)
+                },
+                onDeleteClone = { viewModel.deleteClone(it) },
+                onClearCloneData = { viewModel.clearCloneStorage(it) },
+                onLaunchNativeClone = { clone ->
+                  val res = viewModel.launchNativeClone(clone)
+                  res.onFailure {
+                    Toast.makeText(this@MainActivity, "Launch failed: ${it.localizedMessage}", Toast.LENGTH_SHORT).show()
+                  }
+                },
+                onDownloadRequested = { url, fileName ->
+                  viewModel.startUrlDownload(url, fileName)
+                }
               )
             }
 
@@ -261,12 +462,40 @@ class MainActivity : ComponentActivity() {
                 },
                 onUninstall = { pkg ->
                   viewModel.installerManager.uninstallApp(pkg)
+                },
+                onClone = { appToClone ->
+                  viewModel.selectAppDetail(null)
+                  appToCloneForNativeDialog = appToClone
+                }
+              )
+            }
+
+            // Dialog for cloning a native APK / installed package
+            appToCloneForNativeDialog?.let { targetNativeApp ->
+              CloneAppDialog(
+                originalAppName = targetNativeApp.appName,
+                defaultBadge = "Clone 1",
+                onDismiss = { appToCloneForNativeDialog = null },
+                onConfirm = { cloneName, cloneBadge, emoji, colorTintHex ->
+                  viewModel.cloneNativeApp(targetNativeApp, cloneName, cloneBadge, emoji, colorTintHex)
+                  appToCloneForNativeDialog = null
+                  viewModel.setTab(4) // Navigate to Cloner Hub to view the cloned app
+                  Toast.makeText(this@MainActivity, "Cloned ${targetNativeApp.appName} successfully!", Toast.LENGTH_SHORT).show()
                 }
               )
             }
           }
         }
       }
+    }
+  }
+
+  override fun onNewIntent(intent: android.content.Intent) {
+    super.onNewIntent(intent)
+    setIntent(intent)
+    val navTab = intent.getIntExtra("nav_tab", -1)
+    if (navTab >= 0) {
+      viewModel.setTab(navTab)
     }
   }
 }

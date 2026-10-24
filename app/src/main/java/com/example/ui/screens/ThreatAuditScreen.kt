@@ -52,13 +52,17 @@ import com.example.ui.theme.RiskHigh
 import com.example.ui.theme.RiskMedium
 import com.example.ui.theme.RiskSafe
 
+import androidx.compose.material.icons.filled.CloudDone
+import androidx.compose.material.icons.filled.CloudSync
+
 @Composable
 fun ThreatAuditScreen(
   manifestInput: String,
   auditResult: ManifestAuditResult?,
   defaultSampleText: String,
   onInputChanged: (String) -> Unit,
-  onRunAudit: (String) -> Unit
+  onRunAudit: (String) -> Unit,
+  onSaveToCloud: (() -> Unit)? = null
 ) {
   var showInputEditor by remember { mutableStateOf(false) }
 
@@ -107,7 +111,7 @@ fun ThreatAuditScreen(
 
           Row(
             modifier = Modifier.fillMaxWidth(),
-            horizontalArrangement = Arrangement.spacedBy(10.dp)
+            horizontalArrangement = Arrangement.spacedBy(8.dp)
           ) {
             Button(
               onClick = { onRunAudit(manifestInput) },
@@ -116,18 +120,32 @@ fun ThreatAuditScreen(
                 .testTag("run_audit_button"),
               colors = ButtonDefaults.buttonColors(containerColor = MaterialTheme.colorScheme.primary)
             ) {
-              Icon(Icons.Default.Security, contentDescription = null, modifier = Modifier.size(18.dp))
-              Spacer(modifier = Modifier.width(6.dp))
-              Text("Audit Manifest", fontWeight = FontWeight.Bold)
+              Icon(Icons.Default.Security, contentDescription = null, modifier = Modifier.size(16.dp))
+              Spacer(modifier = Modifier.width(4.dp))
+              Text("Audit", fontWeight = FontWeight.Bold, fontSize = 12.sp)
+            }
+
+            onSaveToCloud?.let { saveAction ->
+              Button(
+                onClick = saveAction,
+                modifier = Modifier
+                  .weight(1.1f)
+                  .testTag("save_cloud_audit_button"),
+                colors = ButtonDefaults.buttonColors(containerColor = MaterialTheme.colorScheme.tertiary)
+              ) {
+                Icon(Icons.Default.CloudSync, contentDescription = null, modifier = Modifier.size(16.dp))
+                Spacer(modifier = Modifier.width(4.dp))
+                Text("Sync Cloud", fontWeight = FontWeight.Bold, fontSize = 12.sp)
+              }
             }
 
             OutlinedButton(
               onClick = { showInputEditor = !showInputEditor },
               modifier = Modifier.testTag("toggle_editor_button")
             ) {
-              Icon(Icons.Default.Code, contentDescription = null, modifier = Modifier.size(18.dp))
-              Spacer(modifier = Modifier.width(6.dp))
-              Text(if (showInputEditor) "Hide Code" else "Edit Raw")
+              Icon(Icons.Default.Code, contentDescription = null, modifier = Modifier.size(16.dp))
+              Spacer(modifier = Modifier.width(4.dp))
+              Text(if (showInputEditor) "Hide" else "Raw", fontSize = 12.sp)
             }
           }
         }

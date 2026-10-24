@@ -1,0 +1,123 @@
+{
+  "entities": {
+    "User": {
+      "title": "User",
+      "description": "Authenticated user profile in AppPulse",
+      "type": "object",
+      "properties": {
+        "userId": {
+          "type": "string",
+          "description": "Unique Firebase Auth UID"
+        },
+        "email": {
+          "type": "string",
+          "description": "User email address"
+        },
+        "displayName": {
+          "type": "string",
+          "description": "User display name"
+        },
+        "createdAt": {
+          "type": "string",
+          "format": "date-time",
+          "description": "Server timestamp of account creation"
+        }
+      },
+      "required": ["userId", "email", "createdAt"]
+    },
+    "AuditReport": {
+      "title": "AuditReport",
+      "description": "Saved application threat and dropper audit report",
+      "type": "object",
+      "properties": {
+        "id": {
+          "type": "string",
+          "description": "Unique report ID"
+        },
+        "userId": {
+          "type": "string",
+          "description": "Owner user UID"
+        },
+        "packageName": {
+          "type": "string",
+          "description": "Scanned application package name"
+        },
+        "appName": {
+          "type": "string",
+          "description": "Display name of audited application"
+        },
+        "riskScore": {
+          "type": "integer",
+          "description": "Threat score 0 to 100"
+        },
+        "riskLevel": {
+          "type": "string",
+          "enum": ["LOW", "MEDIUM", "HIGH", "CRITICAL"],
+          "description": "Calculated threat level category"
+        },
+        "detectedThreats": {
+          "type": "array",
+          "items": { "type": "string" },
+          "description": "List of flagged threat signals"
+        },
+        "timestamp": {
+          "type": "string",
+          "format": "date-time",
+          "description": "Report timestamp"
+        }
+      },
+      "required": ["id", "userId", "packageName", "appName", "riskScore", "riskLevel", "timestamp"]
+    },
+    "BatterySnapshot": {
+      "title": "BatterySnapshot",
+      "description": "Device battery telemetry and high-drain background task snapshot",
+      "type": "object",
+      "properties": {
+        "id": {
+          "type": "string",
+          "description": "Unique snapshot ID"
+        },
+        "userId": {
+          "type": "string",
+          "description": "Owner user UID"
+        },
+        "batteryLevel": {
+          "type": "integer",
+          "description": "Battery charge percentage"
+        },
+        "temperatureCelsius": {
+          "type": "number",
+          "description": "Battery temperature in Celsius"
+        },
+        "chargingType": {
+          "type": "string",
+          "description": "Charging status and connector type"
+        },
+        "highDrainAppsCount": {
+          "type": "integer",
+          "description": "Number of high-drain background processes detected"
+        },
+        "timestamp": {
+          "type": "string",
+          "format": "date-time",
+          "description": "Snapshot timestamp"
+        }
+      },
+      "required": ["id", "userId", "batteryLevel", "temperatureCelsius", "chargingType", "highDrainAppsCount", "timestamp"]
+    }
+  },
+  "firestore": {
+    "/users/{userId}": {
+      "schema": { "$ref": "#/entities/User" },
+      "description": "User profile document storing account metadata"
+    },
+    "/users/{userId}/audit_reports/{reportId}": {
+      "schema": { "$ref": "#/entities/AuditReport" },
+      "description": "Per-user collection of saved security threat audits"
+    },
+    "/users/{userId}/battery_snapshots/{snapshotId}": {
+      "schema": { "$ref": "#/entities/BatterySnapshot" },
+      "description": "Per-user history of battery health telemetry records"
+    }
+  }
+}

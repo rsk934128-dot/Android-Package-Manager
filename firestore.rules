@@ -1,0 +1,78 @@
+rules_version = '2';
+service cloud.firestore {
+  match /databases/{database}/documents {
+
+    function isAuthenticated() {
+      return request.auth != null && request.auth.uid != null;
+    }
+
+    function isOwner(userId) {
+      return isAuthenticated() && request.auth.uid == userId;
+    }
+
+    function isValidUser(data) {
+      return data.keys().hasAll(['userId', 'email', 'createdAt']) &&
+        data.keys().hasOnly(['userId', 'email', 'displayName', 'createdAt']) &&
+        data.userId is string && data.userId == request.auth.uid &&
+        data.email is string && data.email.size() <= 200 &&
+        (!('displayName' in data) || (data.displayName is string && data.displayName.size() <= 100)) &&
+        data.createdAt is timestamp && data.createdAt <= request.time;
+    }
+
+    function isValidAuditReport(data) {
+      return data.keys().hasAll(['id', 'userId', 'packageName', 'appName', 'riskScore', 'riskLevel', 'timestamp']) &&
+        data.keys().hasOnly(['id', 'userId', 'packageName', 'appName', 'riskScore', 'riskLevel', 'detectedThreats', 'timestamp']) &&
+        data.id is string && data.id.size() <= 100 &&
+        data.userId is string && data.userId == request.auth.uid &&
+        data.packageName is string && data.packageName.size() <= 150 &&
+        data.appName is string && data.appName.size() <= 150 &&
+        data.riskScore is int && data.riskScore >= 0 && data.riskScore <= 100 &&
+        data.riskLevel in ['LOW', 'MEDIUM', 'HIGH', 'CRITICAL'] &&
+        (!('detectedThreats' in data) || data.detectedThreats is list) &&
+        data.timestamp is timestamp && data.timestamp <= request.time;
+    }
+
+    function isValidBatterySnapshot(data) {
+      return data.keys().hasAll(['id', 'userId', 'batteryLevel', 'temperatureCelsius', 'chargingType', 'highDrainAppsCount', 'timestamp']) &&
+        data.keys().hasOnly(['id', 'userId', 'batteryLevel', 'temperatureCelsius', 'chargingType', 'highDrainAppsCount', 'timestamp']) &&
+        data.id is string && data.id.size() <= 100 &&
+        data.userId is string && data.userId == request.auth.uid &&
+        data.batteryLevel is int && data.batteryLevel >= 0 && data.batteryLevel <= 100 &&
+        data.temperatureCelsius is number && data.temperatureCelsius >= -30.0 && data.temperatureCelsius <= 120.0 &&
+        data.chargingType is string && data.chargingType.size() <= 50 &&
+        data.highDrainAppsCount is int && data.highDrainAppsCount >= 0 &&
+        data.timestamp is timestamp && data.timestamp <= request.time;
+    }
+
+    match /users/{userId} {
+      allow read: if isOwner(userId);
+      allow create: if isOwner(userId) && isValidUser(request.resource.data);
+      allow update: if isOwner(userId) && isValidUser(request.resource.data) &&
+        request.resource.data.userId == resource.data.userId &&
+        request.resource.data.createdAt == resource.data.createdAt;
+      allow delete: if isOwner(userId);
+
+      match /audit_reports/{reportId} {
+        allow read: if isOwner(userId);
+        allow create: if isOwner(userId) && isValidAuditReport(request.resource.data);
+        allow update: if isOwner(userId) && isValidAuditReport(request.resource.data) &&
+          request.resource.data.userId == resource.data.userId &&
+          request.resource.data.id == resource.data.id;
+        allow delete: if isOwner(userId);
+      }
+
+      match /battery_snapshots/{snapshotId} {
+        allow read: if isOwner(userId);
+        allow create: if isOwner(userId) && isValidBatterySnapshot(request.resource.data);
+        allow update: if isOwner(userId) && isValidBatterySnapshot(request.resource.data) &&
+          request.resource.data.userId == resource.data.userId &&
+          request.resource.data.id == resource.data.id;
+        allow delete: if isOwner(userId);
+      }
+    }
+
+    match /{document=**} {
+      allow read, write: if false;
+    }
+  }
+}

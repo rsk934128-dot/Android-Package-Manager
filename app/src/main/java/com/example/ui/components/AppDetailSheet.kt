@@ -17,10 +17,12 @@ import androidx.compose.foundation.shape.CircleShape
 import androidx.compose.foundation.shape.RoundedCornerShape
 import androidx.compose.material.icons.Icons
 import androidx.compose.material.icons.filled.Delete
+import androidx.compose.material.icons.filled.Layers
 import androidx.compose.material.icons.filled.OpenInNew
 import androidx.compose.material.icons.filled.PlayArrow
 import androidx.compose.material.icons.filled.Security
 import androidx.compose.material.icons.filled.Settings
+import androidx.compose.material3.FilledTonalButton
 import androidx.compose.material.icons.filled.Warning
 import androidx.compose.material3.Button
 import androidx.compose.material3.ButtonDefaults
@@ -58,7 +60,8 @@ fun AppDetailSheet(
   onDismiss: () -> Unit,
   onLaunch: (String) -> Unit,
   onOpenSettings: (String) -> Unit,
-  onUninstall: (String) -> Unit
+  onUninstall: (String) -> Unit,
+  onClone: ((AppPackageItem) -> Unit)? = null
 ) {
   val sheetState = rememberModalBottomSheetState(skipPartiallyExpanded = true)
   val dateFormat = SimpleDateFormat("yyyy-MM-dd HH:mm", Locale.getDefault())
@@ -204,6 +207,19 @@ fun AppDetailSheet(
             Icon(Icons.Default.Settings, contentDescription = null, modifier = Modifier.size(18.dp))
             Spacer(modifier = Modifier.width(6.dp))
             Text("Details")
+          }
+
+          if (onClone != null) {
+            FilledTonalButton(
+              onClick = { onClone(app) },
+              modifier = Modifier
+                .weight(1f)
+                .testTag("clone_app_detail_button")
+            ) {
+              Icon(Icons.Default.Layers, contentDescription = null, modifier = Modifier.size(18.dp))
+              Spacer(modifier = Modifier.width(4.dp))
+              Text("Clone")
+            }
           }
 
           if (!app.isSystemApp) {

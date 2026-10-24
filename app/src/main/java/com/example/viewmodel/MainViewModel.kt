@@ -3,12 +3,26 @@ package com.example.viewmodel
 import android.app.Application
 import androidx.lifecycle.AndroidViewModel
 import androidx.lifecycle.viewModelScope
+import android.app.Activity
+import com.example.manager.AppClonerManager
 import com.example.manager.ApkInstallerManager
+import com.example.manager.AuthManager
+import com.example.manager.BatteryMonitorManager
 import com.example.manager.DownloaderManager
 import com.example.manager.RemoteServerManager
 import com.example.manager.RemoteServerState
 import com.example.manager.SecurityAuditEngine
 import com.example.manager.SystemDiagnosticsManager
+import com.example.manager.WebAppManager
+import com.example.model.ClonedAppItem
+import com.example.model.SavedWebApp
+import com.example.model.WebAppCategory
+import com.example.model.WebAppNotificationEvent
+import com.example.model.WebNotificationType
+import com.example.repository.AppPulseFirestoreRepository
+import com.google.firebase.auth.FirebaseUser
+import com.example.model.AppBatteryDrainInfo
+import com.example.model.BatteryHealthReport
 import com.example.model.AppPackageItem
 import com.example.model.DownloadItem
 import com.example.model.ManifestAuditResult
@@ -36,6 +50,28 @@ class MainViewModel(application: Application) : AndroidViewModel(application) {
   val downloaderManager = DownloaderManager(application)
   val auditEngine = SecurityAuditEngine(application)
   val diagnosticsManager = SystemDiagnosticsManager(application)
+  val batteryMonitorManager = BatteryMonitorManager(application)
+  val authManager = AuthManager(application)
+  val firestoreRepository = AppPulseFirestoreRepository(application)
+  val webAppManager = WebAppManager(application)
+  val appClonerManager = AppClonerManager(application)
+
+  val savedWebApps: StateFlow<List<SavedWebApp>> = webAppManager.savedWebApps
+  val activeWebApp: StateFlow<SavedWebApp?> = webAppManager.activeWebApp
+  val isWebAppBackgroundActive: StateFlow<Boolean> = webAppManager.isBackgroundServiceActive
+  val webAppNotificationHistory: StateFlow<List<WebAppNotificationEvent>> = webAppManager.recentNotifications
+
+  val clonedApps: StateFlow<List<ClonedAppItem>> = appClonerManager.clonedApps
+  val activeClonedApp: StateFlow<ClonedAppItem?> = appClonerManager.activeClonedApp
+
+  val currentUser: StateFlow<FirebaseUser?> = authManager.authStateFlow()
+    .stateIn(viewModelScope, SharingStarted.WhileSubscribed(5000), authManager.currentUser)
+
+  private val _cloudSyncStatus = MutableStateFlow<String?>(null)
+  val cloudSyncStatus: StateFlow<String?> = _cloudSyncStatus.asStateFlow()
+
+  private val _batteryReport = MutableStateFlow<BatteryHealthReport?>(null)
+  val batteryReport: StateFlow<BatteryHealthReport?> = _batteryReport.asStateFlow()
 
   val remoteServerManager = RemoteServerManager(
     context = application,
@@ -121,6 +157,7 @@ Shell Protection: com.protect2025
   init {
     refreshInstalledApps()
     refreshDiagnostics()
+    refreshBatteryReport()
     runManifestAudit(defaultSampleAuditText)
   }
 
@@ -196,6 +233,191 @@ Shell Protection: com.protect2025
 
   fun triggerFindPhoneAlarm() {
     remoteServerManager.playFindDeviceSound()
+  }
+
+  fun refreshBatteryReport() {
+    viewModelScope.launch {
+      _batteryReport.value = batteryMonitorManager.generateBatteryReport()
+    }
+  }
+
+  fun openBatteryOptimizationSettings(packageName: String? = null) {
+    val intent = batteryMonitorManager.createBatteryOptimizationIntent(packageName)
+    getApplication<Application>().startActivity(intent)
+  }
+
+  fun openAppDetailsSettings(packageName: String) {
+    val intent = batteryMonitorManager.createForceStopSettingsIntent(packageName)
+    getApplication<Application>().startActivity(intent)
+  }
+
+  fun scanAndNotifyHighDrainTasks(
+    threshold: Int = BatteryMonitorManager.DEFAULT_DRAIN_THRESHOLD_SCORE,
+    bypassCooldown: Boolean = false
+  ): List<AppBatteryDrainInfo> {
+    val alerted = batteryMonitorManager.checkAndNotifyHighDrainTasks(threshold, bypassCooldown)
+    refreshBatteryReport()
+    return alerted
+  }
+
+  fun signInWithGoogle(activity: Activity) {
+    viewModelScope.launch {
+      _cloudSyncStatus.value = "Authenticating with Google..."
+      authManager.signInWithGoogle(activity)
+        .onSuccess { user ->
+          _cloudSyncStatus.value = "Signed in as ${user.displayName ?: user.email}"
+          firestoreRepository.saveUserProfile(user.displayName, user.email ?: "")
+        }
+        .onFailure { error ->
+          _cloudSyncStatus.value = "Sign-in error: ${error.localizedMessage}"
+        }
+    }
+  }
+
+  fun signOut() {
+    viewModelScope.launch {
+      authManager.signOut()
+      _cloudSyncStatus.value = "Signed out"
+    }
+  }
+
+  fun syncCurrentThreatReportToCloud(onComplete: (Boolean, String) -> Unit) {
+    viewModelScope.launch {
+      val user = authManager.currentUser
+      if (user == null) {
+        onComplete(false, "Please sign in with Google to sync to cloud")
+        return@launch
+      }
+
+      val audit = _manifestAuditResult.value
+      if (audit == null) {
+        onComplete(false, "No audit report available to sync")
+        return@launch
+      }
+
+      runCatching {
+        val reportId = firestoreRepository.saveAuditReport(
+          packageName = audit.packageName,
+          appName = "Audited: ${audit.packageName}",
+          riskScore = audit.threatScore,
+          riskLevel = audit.threatLevel.name,
+          detectedThreats = audit.detectedVulnerabilities
+        )
+        _cloudSyncStatus.value = "Audit Report synced to Firestore (ID: ${reportId.take(8)})"
+        onComplete(true, "Successfully saved to Firebase Firestore!")
+      }.onFailure { err ->
+        _cloudSyncStatus.value = "Sync failed: ${err.localizedMessage}"
+        onComplete(false, "Sync failed: ${err.localizedMessage}")
+      }
+    }
+  }
+
+  fun syncCurrentBatterySnapshotToCloud(onComplete: (Boolean, String) -> Unit) {
+    viewModelScope.launch {
+      val user = authManager.currentUser
+      if (user == null) {
+        onComplete(false, "Please sign in with Google to sync to cloud")
+        return@launch
+      }
+
+      val report = _batteryReport.value ?: batteryMonitorManager.generateBatteryReport()
+      runCatching {
+        val snapshotId = firestoreRepository.saveBatterySnapshot(
+          batteryLevel = report.batteryLevel,
+          temperatureCelsius = report.temperatureCelsius.toDouble(),
+          chargingType = report.chargingType,
+          highDrainAppsCount = report.drainingApps.size
+        )
+        _cloudSyncStatus.value = "Battery snapshot synced to Firestore (ID: ${snapshotId.take(8)})"
+        onComplete(true, "Battery snapshot saved to Firebase Firestore!")
+      }.onFailure { err ->
+        _cloudSyncStatus.value = "Sync failed: ${err.localizedMessage}"
+        onComplete(false, "Sync failed: ${err.localizedMessage}")
+      }
+    }
+  }
+
+  fun openWebApp(app: SavedWebApp) {
+    webAppManager.openWebApp(app)
+  }
+
+  fun closeActiveWebApp() {
+    webAppManager.closeActiveWebApp()
+  }
+
+  fun addWebApp(
+    name: String,
+    url: String,
+    category: WebAppCategory,
+    keepAlive: Boolean,
+    desktopMode: Boolean
+  ) {
+    webAppManager.addWebApp(
+      name = name,
+      url = url,
+      category = category,
+      keepAlive = keepAlive,
+      enableNotifications = true,
+      desktopMode = desktopMode
+    )
+  }
+
+  fun deleteWebApp(appId: String) {
+    webAppManager.deleteWebApp(appId)
+  }
+
+  fun toggleWebAppBackgroundService(enable: Boolean) {
+    webAppManager.toggleBackgroundService(enable)
+  }
+
+  fun triggerWebNotification(
+    appName: String,
+    title: String,
+    body: String,
+    type: WebNotificationType
+  ) {
+    webAppManager.handleWebNotification(appName, title, body, type)
+  }
+
+  // App Cloner & Dual Space Operations
+  fun cloneWebApp(
+    webApp: SavedWebApp,
+    name: String,
+    badge: String,
+    emoji: String = "👥",
+    color: Long = 0xFF10B981L
+  ): ClonedAppItem {
+    return appClonerManager.createWebAppClone(webApp, name, badge, emoji, color)
+  }
+
+  fun cloneNativeApp(
+    app: AppPackageItem,
+    name: String,
+    badge: String,
+    emoji: String = "👥",
+    color: Long = 0xFF3B82F6L
+  ): ClonedAppItem {
+    return appClonerManager.createNativeAppClone(app, name, badge, emoji, color)
+  }
+
+  fun deleteClone(cloneId: String) {
+    appClonerManager.deleteClone(cloneId)
+  }
+
+  fun openClone(clone: ClonedAppItem) {
+    appClonerManager.openClone(clone)
+  }
+
+  fun closeActiveClone() {
+    appClonerManager.closeActiveClone()
+  }
+
+  fun launchNativeClone(clone: ClonedAppItem): Result<Boolean> {
+    return appClonerManager.launchNativeClone(clone)
+  }
+
+  fun clearCloneStorage(clone: ClonedAppItem) {
+    appClonerManager.clearCloneStorage(clone)
   }
 
   override fun onCleared() {

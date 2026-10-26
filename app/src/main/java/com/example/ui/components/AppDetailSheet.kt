@@ -16,6 +16,7 @@ import androidx.compose.foundation.lazy.items
 import androidx.compose.foundation.shape.CircleShape
 import androidx.compose.foundation.shape.RoundedCornerShape
 import androidx.compose.material.icons.Icons
+import androidx.compose.material.icons.filled.Archive
 import androidx.compose.material.icons.filled.Delete
 import androidx.compose.material.icons.filled.Layers
 import androidx.compose.material.icons.filled.OpenInNew
@@ -61,7 +62,8 @@ fun AppDetailSheet(
   onLaunch: (String) -> Unit,
   onOpenSettings: (String) -> Unit,
   onUninstall: (String) -> Unit,
-  onClone: ((AppPackageItem) -> Unit)? = null
+  onClone: ((AppPackageItem) -> Unit)? = null,
+  onBackup: ((AppPackageItem) -> Unit)? = null
 ) {
   val sheetState = rememberModalBottomSheetState(skipPartiallyExpanded = true)
   val dateFormat = SimpleDateFormat("yyyy-MM-dd HH:mm", Locale.getDefault())
@@ -232,6 +234,30 @@ fun AppDetailSheet(
               Spacer(modifier = Modifier.width(4.dp))
               Text("Uninstall", color = RiskHigh)
             }
+          }
+        }
+
+        if (onBackup != null) {
+          Spacer(modifier = Modifier.height(10.dp))
+          Button(
+            onClick = { onBackup(app) },
+            modifier = Modifier
+              .fillMaxWidth()
+              .testTag("backup_app_button"),
+            colors = ButtonDefaults.buttonColors(containerColor = MaterialTheme.colorScheme.secondaryContainer)
+          ) {
+            Icon(
+              Icons.Default.Archive,
+              contentDescription = null,
+              tint = MaterialTheme.colorScheme.onSecondaryContainer,
+              modifier = Modifier.size(18.dp)
+            )
+            Spacer(modifier = Modifier.width(8.dp))
+            Text(
+              "Backup APK to External Storage (Offline)",
+              color = MaterialTheme.colorScheme.onSecondaryContainer,
+              fontWeight = FontWeight.Bold
+            )
           }
         }
 

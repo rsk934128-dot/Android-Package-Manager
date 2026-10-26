@@ -22,6 +22,7 @@ import androidx.compose.foundation.lazy.items
 import androidx.compose.foundation.shape.CircleShape
 import androidx.compose.foundation.shape.RoundedCornerShape
 import androidx.compose.material.icons.Icons
+import androidx.compose.material.icons.filled.Archive
 import androidx.compose.material.icons.filled.CheckCircle
 import androidx.compose.material.icons.filled.Close
 import androidx.compose.material.icons.filled.Delete
@@ -33,11 +34,15 @@ import androidx.compose.material.icons.filled.Link
 import androidx.compose.material.icons.filled.Pause
 import androidx.compose.material.icons.filled.PlayArrow
 import androidx.compose.material.icons.filled.Refresh
+import androidx.compose.material.icons.filled.Security
+import androidx.compose.material.icons.filled.Share
+import androidx.compose.material.icons.filled.Verified
 import androidx.compose.material3.Button
 import androidx.compose.material3.ButtonDefaults
 import androidx.compose.material3.Card
 import androidx.compose.material3.CardDefaults
 import androidx.compose.material3.CircularProgressIndicator
+import androidx.compose.material3.FilledTonalButton
 import androidx.compose.material3.Icon
 import androidx.compose.material3.IconButton
 import androidx.compose.material3.LinearProgressIndicator
@@ -45,6 +50,7 @@ import androidx.compose.material3.MaterialTheme
 import androidx.compose.material3.OutlinedButton
 import androidx.compose.material3.OutlinedTextField
 import androidx.compose.material3.OutlinedTextFieldDefaults
+import androidx.compose.material3.Surface
 import androidx.compose.material3.Text
 import androidx.compose.runtime.Composable
 import androidx.compose.runtime.getValue
@@ -63,6 +69,7 @@ import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.unit.dp
 import androidx.compose.ui.unit.sp
 import com.example.R
+import com.example.model.ApkBackupItem
 import com.example.model.DownloadItem
 import com.example.model.DownloadStatus
 import com.example.ui.theme.EmeraldTertiary
@@ -77,12 +84,19 @@ import java.util.Locale
 fun DownloaderScreen(
   currentDownload: DownloadItem?,
   downloadedFiles: List<File>,
+  apkBackups: List<ApkBackupItem> = emptyList(),
+  batchBackupProgress: Triple<Int, Int, String>? = null,
   onStartDownload: (String, String?) -> Unit,
   onStartDemo: (String, Int) -> Unit,
   onCancelDownload: () -> Unit,
   onInstallApk: (File) -> Unit,
   onDeleteFile: (File) -> Unit,
-  onClearCache: () -> Unit
+  onClearCache: () -> Unit,
+  onBackupAllUserApps: () -> Unit = {},
+  onDeleteBackup: (ApkBackupItem) -> Unit = {},
+  onClearBackups: () -> Unit = {},
+  onShareBackup: (ApkBackupItem) -> Unit = {},
+  onVerifyBackup: ((ApkBackupItem) -> Boolean)? = null
 ) {
   var urlText by remember { mutableStateOf("") }
   var fileNameText by remember { mutableStateOf("") }
@@ -547,7 +561,326 @@ fun DownloaderScreen(
     }
 
     item {
-      Spacer(modifier = Modifier.height(24.dp))
+      Spacer(modifier = Modifier.height(20.dp))
+
+      // Offline APK Backups Header
+      Row(
+        verticalAlignment = Alignment.CenterVertically,
+        horizontalArrangement = Arrangement.SpaceBetween,
+        modifier = Modifier.fillMaxWidth()
+      ) {
+        Column {
+          Text(
+            text = "Offline APK Backups (${apkBackups.size})",
+            style = MaterialTheme.typography.titleMedium,
+            fontWeight = FontWeight.Bold,
+            color = MaterialTheme.colorScheme.onSurface
+          )
+          Text(
+            text = "Cloned & archived to external storage",
+            style = MaterialTheme.typography.bodySmall,
+            color = MaterialTheme.colorScheme.onSurfaceVariant
+          )
+        }
+
+        Row(horizontalArrangement = Arrangement.spacedBy(6.dp)) {
+          FilledTonalButton(
+            onClick = onBackupAllUserApps,
+            modifier = Modifier.testTag("backup_all_user_apps_button")
+          ) {
+            Icon(Icons.Default.Archive, contentDescription = null, modifier = Modifier.size(16.dp))
+            Spacer(modifier = Modifier.width(4.dp))
+            Text("Backup All", fontSize = 11.sp)
+          }
+
+          if (apkBackups.isNotEmpty()) {
+            OutlinedButton(
+              onClick = onClearBackups,
+              modifier = Modifier.testTag("clear_all_backups_button")
+            ) {
+              Text("Clear", fontSize = 11.sp)
+            }
+          }
+        }
+      }
+
+      Spacer(modifier = Modifier.height(10.dp))
+    }
+
+    // Batch backup progress banner
+    if (batchBackupProgress != null) {
+      item {
+        val (current, total, currentName) = batchBackupProgress
+        Card(
+          shape = RoundedCornerShape(12.dp),
+          colors = CardDefaults.cardColors(containerColor = MaterialTheme.colorScheme.primaryContainer),
+          modifier = Modifier
+            .fillMaxWidth()
+            .padding(bottom = 10.dp)
+            .testTag("batch_backup_progress_card")
+        ) {
+          Column(modifier = Modifier.padding(14.dp)) {
+            Row(
+              verticalAlignment = Alignment.CenterVertically,
+              horizontalArrangement = Arrangement.SpaceBetween,
+              modifier = Modifier.fillMaxWidth()
+            ) {
+              Text(
+                text = "Backing up app: $currentName",
+                fontWeight = FontWeight.Bold,
+                fontSize = 13.sp,
+                color = MaterialTheme.colorScheme.onPrimaryContainer
+              )
+              Text(
+                text = "$current / $total",
+                fontSize = 12.sp,
+                fontWeight = FontWeight.SemiBold,
+                color = MaterialTheme.colorScheme.primary
+              )
+            }
+            Spacer(modifier = Modifier.height(8.dp))
+            LinearProgressIndicator(
+              progress = { if (total > 0) current.toFloat() / total else 0f },
+              modifier = Modifier
+                .fillMaxWidth()
+                .height(6.dp)
+                .clip(CircleShape),
+              color = MaterialTheme.colorScheme.primary,
+              trackColor = MaterialTheme.colorScheme.surface
+            )
+          }
+        }
+      }
+    }
+
+    if (apkBackups.isEmpty()) {
+      item {
+        Card(
+          colors = CardDefaults.cardColors(containerColor = MaterialTheme.colorScheme.surfaceVariant.copy(alpha = 0.5f)),
+          shape = RoundedCornerShape(12.dp),
+          modifier = Modifier.fillMaxWidth()
+        ) {
+          Column(
+            modifier = Modifier
+              .fillMaxWidth()
+              .padding(20.dp),
+            horizontalAlignment = Alignment.CenterHorizontally
+          ) {
+            Icon(
+              Icons.Default.Archive,
+              contentDescription = null,
+              tint = MaterialTheme.colorScheme.primary,
+              modifier = Modifier.size(36.dp)
+            )
+            Spacer(modifier = Modifier.height(8.dp))
+            Text(
+              text = "No offline APK backups saved yet",
+              fontSize = 13.sp,
+              fontWeight = FontWeight.Medium,
+              color = MaterialTheme.colorScheme.onSurfaceVariant
+            )
+            Text(
+              text = "Tap 'Backup All' or backup any app from the Inspector tab to save offline copies for restoration or sharing.",
+              fontSize = 11.sp,
+              color = MaterialTheme.colorScheme.onSurfaceVariant.copy(alpha = 0.8f),
+              modifier = Modifier.padding(top = 4.dp)
+            )
+          }
+        }
+      }
+    } else {
+      items(apkBackups, key = { it.id }) { backup ->
+        var isVerified by remember(backup.id) { mutableStateOf<Boolean?>(null) }
+
+        Card(
+          shape = RoundedCornerShape(12.dp),
+          colors = CardDefaults.cardColors(containerColor = MaterialTheme.colorScheme.surface),
+          modifier = Modifier
+            .fillMaxWidth()
+            .padding(vertical = 4.dp)
+            .testTag("apk_backup_item_${backup.packageName}")
+        ) {
+          Column(modifier = Modifier.padding(12.dp)) {
+            Row(
+              verticalAlignment = Alignment.CenterVertically,
+              modifier = Modifier.fillMaxWidth()
+            ) {
+              Surface(
+                shape = RoundedCornerShape(10.dp),
+                color = MaterialTheme.colorScheme.secondaryContainer,
+                modifier = Modifier.size(42.dp)
+              ) {
+                Box(contentAlignment = Alignment.Center) {
+                  Text(
+                    text = backup.appName.take(1).uppercase(),
+                    fontSize = 18.sp,
+                    fontWeight = FontWeight.Bold,
+                    color = MaterialTheme.colorScheme.onSecondaryContainer
+                  )
+                }
+              }
+
+              Spacer(modifier = Modifier.width(12.dp))
+
+              Column(modifier = Modifier.weight(1f)) {
+                Row(
+                  verticalAlignment = Alignment.CenterVertically,
+                  horizontalArrangement = Arrangement.SpaceBetween,
+                  modifier = Modifier.fillMaxWidth()
+                ) {
+                  Text(
+                    text = backup.appName,
+                    fontWeight = FontWeight.Bold,
+                    fontSize = 14.sp,
+                    maxLines = 1,
+                    color = MaterialTheme.colorScheme.onSurface,
+                    modifier = Modifier.weight(1f, fill = false)
+                  )
+                  Surface(
+                    shape = RoundedCornerShape(6.dp),
+                    color = MaterialTheme.colorScheme.primaryContainer,
+                    modifier = Modifier.padding(start = 6.dp)
+                  ) {
+                    Text(
+                      text = "Code: ${backup.versionCode}",
+                      fontSize = 9.sp,
+                      fontWeight = FontWeight.Bold,
+                      color = MaterialTheme.colorScheme.onPrimaryContainer,
+                      modifier = Modifier.padding(horizontal = 6.dp, vertical = 2.dp)
+                    )
+                  }
+                }
+
+                Spacer(modifier = Modifier.height(2.dp))
+
+                Text(
+                  text = backup.packageName,
+                  fontSize = 11.sp,
+                  color = MaterialTheme.colorScheme.onSurfaceVariant,
+                  maxLines = 1
+                )
+
+                Spacer(modifier = Modifier.height(2.dp))
+
+                Text(
+                  text = "v${backup.versionName} • ${formatBytes(backup.fileSizeBytes)} • ${dateFormat.format(Date(backup.backupTimestamp))}",
+                  fontSize = 10.sp,
+                  color = MaterialTheme.colorScheme.primary
+                )
+              }
+            }
+
+            Spacer(modifier = Modifier.height(8.dp))
+
+            // Action row & Integrity verification
+            Row(
+              verticalAlignment = Alignment.CenterVertically,
+              horizontalArrangement = Arrangement.SpaceBetween,
+              modifier = Modifier.fillMaxWidth()
+            ) {
+              // SHA-256 and verification chip
+              Surface(
+                shape = RoundedCornerShape(6.dp),
+                color = when (isVerified) {
+                  true -> RiskSafe.copy(alpha = 0.15f)
+                  false -> RiskHigh.copy(alpha = 0.15f)
+                  null -> MaterialTheme.colorScheme.surfaceVariant
+                },
+                modifier = Modifier.testTag("verify_checksum_${backup.packageName}")
+              ) {
+                Row(
+                  verticalAlignment = Alignment.CenterVertically,
+                  modifier = Modifier.padding(horizontal = 8.dp, vertical = 4.dp)
+                ) {
+                  Icon(
+                    imageVector = if (isVerified == true) Icons.Default.Verified else Icons.Default.Security,
+                    contentDescription = null,
+                    tint = if (isVerified == true) RiskSafe else MaterialTheme.colorScheme.outline,
+                    modifier = Modifier.size(13.dp)
+                  )
+                  Spacer(modifier = Modifier.width(4.dp))
+                  Text(
+                    text = when (isVerified) {
+                      true -> "SHA-256 Valid"
+                      false -> "Checksum Mismatch"
+                      null -> "SHA-256: ${backup.sha256Checksum.take(8)}..."
+                    },
+                    fontSize = 10.sp,
+                    color = when (isVerified) {
+                      true -> RiskSafe
+                      false -> RiskHigh
+                      null -> MaterialTheme.colorScheme.onSurfaceVariant
+                    }
+                  )
+                }
+              }
+
+              // Install, Share, Delete Buttons
+              Row(verticalAlignment = Alignment.CenterVertically) {
+                // Verify button
+                if (isVerified == null && onVerifyBackup != null) {
+                  IconButton(
+                    onClick = {
+                      isVerified = onVerifyBackup(backup)
+                    },
+                    modifier = Modifier.size(32.dp).testTag("verify_backup_${backup.packageName}")
+                  ) {
+                    Icon(
+                      Icons.Default.Verified,
+                      contentDescription = "Verify Integrity",
+                      tint = MaterialTheme.colorScheme.outline,
+                      modifier = Modifier.size(18.dp)
+                    )
+                  }
+                }
+
+                // Install Button
+                IconButton(
+                  onClick = { onInstallApk(backup.backupFile) },
+                  modifier = Modifier.size(32.dp).testTag("install_backup_${backup.packageName}")
+                ) {
+                  Icon(
+                    Icons.Default.InstallMobile,
+                    contentDescription = "Install Offline APK",
+                    tint = EmeraldTertiary,
+                    modifier = Modifier.size(18.dp)
+                  )
+                }
+
+                // Share / Export Button
+                IconButton(
+                  onClick = { onShareBackup(backup) },
+                  modifier = Modifier.size(32.dp).testTag("share_backup_${backup.packageName}")
+                ) {
+                  Icon(
+                    Icons.Default.Share,
+                    contentDescription = "Export / Share Offline APK",
+                    tint = MaterialTheme.colorScheme.primary,
+                    modifier = Modifier.size(18.dp)
+                  )
+                }
+
+                // Delete Button
+                IconButton(
+                  onClick = { onDeleteBackup(backup) },
+                  modifier = Modifier.size(32.dp).testTag("delete_backup_${backup.packageName}")
+                ) {
+                  Icon(
+                    Icons.Default.Delete,
+                    contentDescription = "Delete Backup",
+                    tint = RiskHigh,
+                    modifier = Modifier.size(18.dp)
+                  )
+                }
+              }
+            }
+          }
+        }
+      }
+    }
+
+    item {
+      Spacer(modifier = Modifier.height(28.dp))
     }
   }
 }

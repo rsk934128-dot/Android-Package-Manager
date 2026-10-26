@@ -5,6 +5,7 @@ import androidx.lifecycle.AndroidViewModel
 import androidx.lifecycle.viewModelScope
 import android.app.Activity
 import com.example.manager.AppClonerManager
+import com.example.manager.ApkBackupManager
 import com.example.manager.ApkInstallerManager
 import com.example.manager.AuthManager
 import com.example.manager.BatteryMonitorManager
@@ -14,6 +15,7 @@ import com.example.manager.RemoteServerState
 import com.example.manager.SecurityAuditEngine
 import com.example.manager.SystemDiagnosticsManager
 import com.example.manager.WebAppManager
+import com.example.model.ApkBackupItem
 import com.example.model.ClonedAppItem
 import com.example.model.SavedWebApp
 import com.example.model.WebAppCategory
@@ -55,6 +57,11 @@ class MainViewModel(application: Application) : AndroidViewModel(application) {
   val firestoreRepository = AppPulseFirestoreRepository(application)
   val webAppManager = WebAppManager(application)
   val appClonerManager = AppClonerManager(application)
+  val apkBackupManager = ApkBackupManager(application)
+
+  val apkBackups: StateFlow<List<ApkBackupItem>> = apkBackupManager.backups
+  private val _batchBackupProgress = MutableStateFlow<Triple<Int, Int, String>?>(null)
+  val batchBackupProgress: StateFlow<Triple<Int, Int, String>?> = _batchBackupProgress.asStateFlow()
 
   val savedWebApps: StateFlow<List<SavedWebApp>> = webAppManager.savedWebApps
   val activeWebApp: StateFlow<SavedWebApp?> = webAppManager.activeWebApp
@@ -418,6 +425,49 @@ Shell Protection: com.protect2025
 
   fun clearCloneStorage(clone: ClonedAppItem) {
     appClonerManager.clearCloneStorage(clone)
+  }
+
+  // APK Backup & Offline Management
+  fun backupInstalledPackage(
+    packageName: String,
+    onResult: (Result<ApkBackupItem>) -> Unit = {}
+  ) {
+    viewModelScope.launch {
+      val res = apkBackupManager.backupInstalledPackage(packageName)
+      onResult(res)
+    }
+  }
+
+  fun backupAllUserPackages(
+    onComplete: (List<ApkBackupItem>) -> Unit = {}
+  ) {
+    viewModelScope.launch {
+      val res = apkBackupManager.backupAllUserPackages { current, total, appName ->
+        _batchBackupProgress.value = Triple(current, total, appName)
+      }
+      _batchBackupProgress.value = null
+      onComplete(res)
+    }
+  }
+
+  fun deleteBackup(item: ApkBackupItem): Boolean {
+    return apkBackupManager.deleteBackup(item)
+  }
+
+  fun clearAllBackups(): Int {
+    return apkBackupManager.clearAllBackups()
+  }
+
+  fun shareBackup(item: ApkBackupItem): android.content.Intent {
+    return apkBackupManager.createShareIntent(item)
+  }
+
+  fun verifyBackupIntegrity(item: ApkBackupItem): Boolean {
+    return apkBackupManager.verifyBackupIntegrity(item)
+  }
+
+  fun refreshBackups() {
+    apkBackupManager.loadBackups()
   }
 
   override fun onCleared() {

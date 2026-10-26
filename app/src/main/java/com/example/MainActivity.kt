@@ -112,6 +112,8 @@ class MainActivity : ComponentActivity() {
         val webAppNotificationHistory by viewModel.webAppNotificationHistory.collectAsStateWithLifecycle()
         val clonedApps by viewModel.clonedApps.collectAsStateWithLifecycle()
         val activeClonedApp by viewModel.activeClonedApp.collectAsStateWithLifecycle()
+        val apkBackups by viewModel.apkBackups.collectAsStateWithLifecycle()
+        val batchBackupProgress by viewModel.batchBackupProgress.collectAsStateWithLifecycle()
 
         var appToCloneForNativeDialog by remember { mutableStateOf<AppPackageItem?>(null) }
 
@@ -341,6 +343,8 @@ class MainActivity : ComponentActivity() {
               0 -> DownloaderScreen(
                 currentDownload = currentDownload,
                 downloadedFiles = downloadedFiles,
+                apkBackups = apkBackups,
+                batchBackupProgress = batchBackupProgress,
                 onStartDownload = { url, fileName -> viewModel.startUrlDownload(url, fileName) },
                 onStartDemo = { name, sizeMb -> viewModel.startDemoSimulation(name, sizeMb) },
                 onCancelDownload = { viewModel.cancelDownload() },
@@ -351,7 +355,31 @@ class MainActivity : ComponentActivity() {
                   }
                 },
                 onDeleteFile = { file -> viewModel.deleteApkFile(file) },
-                onClearCache = { viewModel.clearAllCachedDownloads() }
+                onClearCache = { viewModel.clearAllCachedDownloads() },
+                onBackupAllUserApps = {
+                  viewModel.backupAllUserPackages { results ->
+                    Toast.makeText(this@MainActivity, "Successfully backed up ${results.size} apps offline!", Toast.LENGTH_SHORT).show()
+                  }
+                },
+                onDeleteBackup = { item ->
+                  viewModel.deleteBackup(item)
+                  Toast.makeText(this@MainActivity, "Deleted backup: ${item.appName}", Toast.LENGTH_SHORT).show()
+                },
+                onClearBackups = {
+                  val count = viewModel.clearAllBackups()
+                  Toast.makeText(this@MainActivity, "Cleared $count offline backups", Toast.LENGTH_SHORT).show()
+                },
+                onShareBackup = { item ->
+                  runCatching {
+                    val intent = viewModel.shareBackup(item)
+                    startActivity(android.content.Intent.createChooser(intent, "Share Offline APK: ${item.appName}"))
+                  }.onFailure {
+                    Toast.makeText(this@MainActivity, "Share error: ${it.localizedMessage}", Toast.LENGTH_SHORT).show()
+                  }
+                },
+                onVerifyBackup = { item ->
+                  viewModel.verifyBackupIntegrity(item)
+                }
               )
 
               1 -> PackageInspectorScreen(
@@ -363,7 +391,16 @@ class MainActivity : ComponentActivity() {
                 onSearchChanged = { viewModel.setSearchQuery(it) },
                 onFilterChanged = { viewModel.setFilter(it) },
                 onAppSelected = { app -> viewModel.selectAppDetail(app) },
-                onRefresh = { viewModel.refreshInstalledApps() }
+                onRefresh = { viewModel.refreshInstalledApps() },
+                onBackupPackage = { pkgName ->
+                  viewModel.backupInstalledPackage(pkgName) { res ->
+                    res.onSuccess {
+                      Toast.makeText(this@MainActivity, "APK for ${it.appName} backed up offline successfully!", Toast.LENGTH_SHORT).show()
+                    }.onFailure {
+                      Toast.makeText(this@MainActivity, "Backup failed: ${it.localizedMessage}", Toast.LENGTH_LONG).show()
+                    }
+                  }
+                }
               )
 
               2 -> ThreatAuditScreen(
@@ -466,6 +503,15 @@ class MainActivity : ComponentActivity() {
                 onClone = { appToClone ->
                   viewModel.selectAppDetail(null)
                   appToCloneForNativeDialog = appToClone
+                },
+                onBackup = { appToBackup ->
+                  viewModel.backupInstalledPackage(appToBackup.packageName) { res ->
+                    res.onSuccess {
+                      Toast.makeText(this@MainActivity, "Offline APK for ${it.appName} saved (${it.fileSizeBytes / (1024 * 1024)} MB)", Toast.LENGTH_SHORT).show()
+                    }.onFailure {
+                      Toast.makeText(this@MainActivity, "Backup failed: ${it.localizedMessage}", Toast.LENGTH_LONG).show()
+                    }
+                  }
                 }
               )
             }

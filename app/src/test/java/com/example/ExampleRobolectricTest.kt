@@ -234,4 +234,64 @@ class ExampleRobolectricTest {
     clonerManager.deleteClone(nativeClone.id)
     org.junit.Assert.assertFalse(clonerManager.clonedApps.value.any { it.id == nativeClone.id })
   }
+
+  @Test
+  fun `test queryInstalledPackagesFromSystem returns package names and version codes`() {
+    val context = ApplicationProvider.getApplicationContext<Context>()
+    val packages = com.example.ui.components.queryInstalledPackagesFromSystem(context)
+
+    org.junit.Assert.assertNotNull(packages)
+    org.junit.Assert.assertTrue(packages.isNotEmpty())
+
+    // Verify self package exists and has non-empty name and valid version code
+    val selfPkg = packages.firstOrNull { it.packageName == context.packageName }
+    org.junit.Assert.assertNotNull(selfPkg)
+    org.junit.Assert.assertTrue(selfPkg!!.appName.isNotBlank())
+    org.junit.Assert.assertTrue(selfPkg.packageName.isNotBlank())
+    org.junit.Assert.assertTrue(selfPkg.versionCode >= 0)
+  }
+
+  @Test
+  fun `test ApkBackupManager offline extraction integrity verification and sharing`() = kotlinx.coroutines.runBlocking {
+    val context = ApplicationProvider.getApplicationContext<Context>()
+    val backupManager = com.example.manager.ApkBackupManager(context)
+
+    // Ensure backup directory is created
+    org.junit.Assert.assertTrue(backupManager.backupDirectory.exists())
+
+    // Create a mock installed package APK in sourceDir if not present
+    val pm = context.packageManager
+    val pkgInfo = pm.getPackageInfo(context.packageName, 0)
+    val dummyApk = java.io.File(context.cacheDir, "mock_installed_app.apk")
+    dummyApk.writeBytes("PK\u0003\u0004DummyApkContent12345".toByteArray())
+    pkgInfo.applicationInfo?.sourceDir = dummyApk.absolutePath
+
+    val result = backupManager.backupInstalledPackage(context.packageName)
+    org.junit.Assert.assertTrue(result.isSuccess)
+    val backupItem = result.getOrThrow()
+
+    assertEquals(context.packageName, backupItem.packageName)
+    org.junit.Assert.assertTrue(backupItem.backupFile.exists())
+    org.junit.Assert.assertTrue(backupItem.fileSizeBytes > 0)
+    org.junit.Assert.assertTrue(backupItem.sha256Checksum.isNotBlank())
+
+    // Verify SHA-256 integrity verification
+    val isIntact = backupManager.verifyBackupIntegrity(backupItem)
+    org.junit.Assert.assertTrue(isIntact)
+
+    // Verify Share Intent generation
+    val shareIntent = backupManager.createShareIntent(backupItem)
+    assertEquals(android.content.Intent.ACTION_SEND, shareIntent.action)
+    assertEquals("application/vnd.android.package-archive", shareIntent.type)
+    org.junit.Assert.assertNotNull(shareIntent.getParcelableExtra<android.net.Uri>(android.content.Intent.EXTRA_STREAM))
+
+    // Verify list persistence
+    org.junit.Assert.assertTrue(backupManager.backups.value.any { it.id == backupItem.id })
+
+    // Verify deletion
+    val deleted = backupManager.deleteBackup(backupItem)
+    org.junit.Assert.assertTrue(deleted)
+    org.junit.Assert.assertFalse(backupItem.backupFile.exists())
+    org.junit.Assert.assertFalse(backupManager.backups.value.any { it.id == backupItem.id })
+  }
 }

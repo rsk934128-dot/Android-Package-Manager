@@ -35,12 +35,20 @@ import androidx.compose.material3.Icon
 import androidx.compose.material3.IconButton
 import androidx.compose.material3.MaterialTheme
 import androidx.compose.material3.OutlinedTextField
+import androidx.compose.material3.Tab
+import androidx.compose.material3.TabRow
 import androidx.compose.material3.Text
 import androidx.compose.runtime.Composable
+import androidx.compose.runtime.getValue
+import androidx.compose.runtime.mutableIntStateOf
+import androidx.compose.runtime.remember
+import androidx.compose.runtime.setValue
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.draw.clip
+import androidx.compose.ui.graphics.Color
 import androidx.compose.ui.platform.testTag
+import com.example.ui.components.InstalledPackagesList
 import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.unit.dp
 import androidx.compose.ui.unit.sp
@@ -61,12 +69,15 @@ fun PackageInspectorScreen(
   onSearchChanged: (String) -> Unit,
   onFilterChanged: (AppFilter) -> Unit,
   onAppSelected: (AppPackageItem) -> Unit,
-  onRefresh: () -> Unit
+  onRefresh: () -> Unit,
+  onBackupPackage: ((String) -> Unit)? = null
 ) {
   val totalCount = allApps.size
   val highRiskCount = allApps.count { it.threatLevel == ThreatLevel.HIGH || it.threatScore >= 25 }
   val userCount = allApps.count { !it.isSystemApp }
   val systemCount = allApps.count { it.isSystemApp }
+
+  var inspectorMode by remember { mutableIntStateOf(0) }
 
   Column(
     modifier = Modifier
@@ -74,6 +85,42 @@ fun PackageInspectorScreen(
       .padding(horizontal = 16.dp)
   ) {
     Spacer(modifier = Modifier.height(8.dp))
+
+    // Top Mode Switcher
+    TabRow(
+      selectedTabIndex = inspectorMode,
+      containerColor = Color.Transparent,
+      modifier = Modifier
+        .fillMaxWidth()
+        .padding(bottom = 8.dp)
+        .testTag("package_inspector_tab_row")
+    ) {
+      Tab(
+        selected = inspectorMode == 0,
+        onClick = { inspectorMode = 0 },
+        text = { Text("Names & Version Codes", fontWeight = FontWeight.Bold, fontSize = 12.sp) },
+        modifier = Modifier.testTag("tab_packages_version_codes")
+      )
+      Tab(
+        selected = inspectorMode == 1,
+        onClick = { inspectorMode = 1 },
+        text = { Text("Threat & Permissions", fontWeight = FontWeight.Bold, fontSize = 12.sp) },
+        modifier = Modifier.testTag("tab_threat_permissions")
+      )
+    }
+
+    if (inspectorMode == 0) {
+      InstalledPackagesList(
+        onPackageClick = { pkg ->
+          val matching = allApps.firstOrNull { it.packageName == pkg.packageName }
+          if (matching != null) {
+            onAppSelected(matching)
+          }
+        },
+        onBackupClick = if (onBackupPackage != null) { { pkg -> onBackupPackage(pkg.packageName) } } else null,
+        showHeader = true
+      )
+    } else {
 
     // Search bar & refresh
     Row(
@@ -227,6 +274,7 @@ fun PackageInspectorScreen(
       }
     }
   }
+}
 }
 
 @Composable

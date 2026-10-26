@@ -472,13 +472,9 @@ fun WebContainer(
               ViewGroup.LayoutParams.MATCH_PARENT
             )
 
-            // Dynamic hardware acceleration alignment
+            // Use native window-backed rendering (avoids forced offscreen layer OOM in emulator)
             runCatching {
-              if (isHardwareAccelerated) {
-                setLayerType(View.LAYER_TYPE_HARDWARE, null)
-              } else {
-                setLayerType(View.LAYER_TYPE_SOFTWARE, null)
-              }
+              setLayerType(View.LAYER_TYPE_NONE, null)
             }
 
             // Secure Cookie Policy
@@ -565,13 +561,17 @@ fun WebContainer(
 
               override fun onRenderProcessGone(view: WebView?, detail: RenderProcessGoneDetail?): Boolean {
                 val didCrash = detail?.didCrash() ?: false
-                val reason = if (didCrash) "Web rendering engine crashed unexpectedly" else "System reclaimed web view memory"
+                val reason = if (didCrash) "Web view renderer reset. Tap Retry to reload." else "System reclaimed web view memory."
                 controller.errorMessage = reason
                 onError?.invoke(reason)
-                view?.apply {
-                  stopLoading()
-                  destroy()
+                view?.let { v ->
+                  runCatching {
+                    (v.parent as? ViewGroup)?.removeView(v)
+                    v.stopLoading()
+                    v.destroy()
+                  }
                 }
+                controller.webView = null
                 return true
               }
 

@@ -294,4 +294,20 @@ class ExampleRobolectricTest {
     org.junit.Assert.assertFalse(backupItem.backupFile.exists())
     org.junit.Assert.assertFalse(backupManager.backups.value.any { it.id == backupItem.id })
   }
+
+  @Test
+  fun `test AuthManager getWebClientId safely returns valid client id without R string dependency`() {
+    val context = ApplicationProvider.getApplicationContext<Context>()
+    runCatching {
+      if (com.google.firebase.FirebaseApp.getApps(context).isEmpty()) {
+        com.google.firebase.FirebaseApp.initializeApp(context)
+      }
+    }
+    val authManager = com.example.manager.AuthManager(context)
+    val webClientId = authManager.getWebClientId()
+
+    org.junit.Assert.assertNotNull(webClientId)
+    org.junit.Assert.assertTrue(webClientId.isNotBlank())
+    org.junit.Assert.assertTrue(webClientId.contains(".apps.googleusercontent.com"))
+  }
 }

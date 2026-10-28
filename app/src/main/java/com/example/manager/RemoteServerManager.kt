@@ -5,17 +5,20 @@ import android.media.RingtoneManager
 import android.os.BatteryManager
 import android.os.Build
 import com.example.model.SystemDiagnostic
-import com.sun.net.httpserver.HttpExchange
-import com.sun.net.httpserver.HttpServer
 import kotlinx.coroutines.CoroutineScope
 import kotlinx.coroutines.Dispatchers
+import kotlinx.coroutines.Job
 import kotlinx.coroutines.flow.MutableStateFlow
 import kotlinx.coroutines.flow.StateFlow
 import kotlinx.coroutines.flow.asStateFlow
+import kotlinx.coroutines.isActive
 import kotlinx.coroutines.launch
+import java.io.BufferedReader
+import java.io.InputStreamReader
 import java.io.OutputStream
 import java.net.InetSocketAddress
-import java.util.concurrent.Executors
+import java.net.ServerSocket
+import java.net.Socket
 import kotlin.random.Random
 
 data class RemoteServerState(
@@ -32,7 +35,8 @@ class RemoteServerManager(
   private val diagnosticsProvider: () -> SystemDiagnostic?
 ) {
 
-  private var httpServer: HttpServer? = null
+  private var serverSocket: ServerSocket? = null
+  private var serverJob: Job? = null
   private val scope = CoroutineScope(Dispatchers.IO)
 
   private val _serverState = MutableStateFlow(
@@ -44,37 +48,28 @@ class RemoteServerManager(
 
   fun startServer(port: Int = 8080): Result<String> {
     return runCatching {
-      if (httpServer != null) {
-        stopServer()
-      }
+      stopServer()
 
-      val server = HttpServer.create(InetSocketAddress(port), 0)
-      server.executor = Executors.newCachedThreadPool()
+      val sSocket = ServerSocket().apply {
+        reuseAddress = true
+        bind(InetSocketAddress(port))
+      }
+      serverSocket = sSocket
 
       val currentPin = _serverState.value.securityPin
 
-      // 1. Root HTML Web Dashboard
-      server.createContext("/") { exchange ->
-        handleDashboardRequest(exchange, currentPin)
+      serverJob = scope.launch {
+        while (isActive && !sSocket.isClosed) {
+          try {
+            val clientSocket = sSocket.accept()
+            launch(Dispatchers.IO) {
+              handleClientConnection(clientSocket, currentPin)
+            }
+          } catch (e: Exception) {
+            if (sSocket.isClosed) break
+          }
+        }
       }
-
-      // 2. Telemetry API
-      server.createContext("/api/status") { exchange ->
-        handleStatusApi(exchange, currentPin)
-      }
-
-      // 3. Play Sound (Find My Device)
-      server.createContext("/api/play-sound") { exchange ->
-        handlePlaySoundApi(exchange, currentPin)
-      }
-
-      // 4. Remote APK Download Push
-      server.createContext("/api/push-download") { exchange ->
-        handlePushDownloadApi(exchange, currentPin)
-      }
-
-      server.start()
-      httpServer = server
 
       val diag = diagnosticsProvider()
       val ip = diag?.ipAddress ?: "127.0.0.1"
@@ -92,8 +87,10 @@ class RemoteServerManager(
 
   fun stopServer() {
     runCatching {
-      httpServer?.stop(0)
-      httpServer = null
+      serverJob?.cancel()
+      serverJob = null
+      serverSocket?.close()
+      serverSocket = null
       _serverState.value = _serverState.value.copy(
         isRunning = false,
         lastCommand = "Server stopped"
@@ -110,70 +107,109 @@ class RemoteServerManager(
     }
   }
 
-  private fun handleDashboardRequest(exchange: HttpExchange, pin: String) {
-    val diag = diagnosticsProvider()
-    val html = getDashboardHtml(diag, pin)
-    val bytes = html.toByteArray(Charsets.UTF_8)
-    exchange.responseHeaders.set("Content-Type", "text/html; charset=UTF-8")
-    exchange.sendResponseHeaders(200, bytes.size.toLong())
-    exchange.responseBody.use { it.write(bytes) }
-  }
+  private fun handleClientConnection(socket: Socket, pin: String) {
+    socket.use { client ->
+      try {
+        val reader = BufferedReader(InputStreamReader(client.getInputStream(), Charsets.UTF_8))
+        val output = client.getOutputStream()
 
-  private fun handleStatusApi(exchange: HttpExchange, pin: String) {
-    val diag = diagnosticsProvider()
-    val bm = context.getSystemService(Context.BATTERY_SERVICE) as? BatteryManager
-    val batteryLevel = bm?.getIntProperty(BatteryManager.BATTERY_PROPERTY_CAPACITY) ?: -1
+        val requestLine = reader.readLine() ?: return
+        val parts = requestLine.split(" ")
+        if (parts.size < 2) return
+        val path = parts[1]
 
-    val json = """
-      {
-        "device": "${diag?.deviceModel ?: Build.MODEL}",
-        "android": "${diag?.androidVersion ?: Build.VERSION.RELEASE}",
-        "battery": $batteryLevel,
-        "online": ${diag?.isOnline ?: true},
-        "network": "${diag?.networkType ?: "Wi-Fi"}",
-        "storageFreeGb": ${(diag?.freeStorageBytes ?: 0) / (1024.0 * 1024.0 * 1024.0)},
-        "storageTotalGb": ${(diag?.totalStorageBytes ?: 0) / (1024.0 * 1024.0 * 1024.0)},
-        "canInstallApk": ${diag?.canInstallPackages ?: false}
-      }
-    """.trimIndent()
-
-    sendJsonResponse(exchange, json)
-  }
-
-  private fun handlePlaySoundApi(exchange: HttpExchange, pin: String) {
-    if (exchange.requestMethod.equals("POST", ignoreCase = true) || exchange.requestMethod.equals("GET", ignoreCase = true)) {
-      playFindDeviceSound()
-      _serverState.value = _serverState.value.copy(lastCommand = "Alert Ring Triggered via Web")
-      sendJsonResponse(exchange, """{"success":true,"message":"Alert sound played on device!"}""")
-    } else {
-      exchange.sendResponseHeaders(405, -1)
-    }
-  }
-
-  private fun handlePushDownloadApi(exchange: HttpExchange, pin: String) {
-    if (exchange.requestMethod.equals("POST", ignoreCase = true)) {
-      val body = exchange.requestBody.bufferedReader().use { it.readText() }
-      val url = Regex(""""url"\s*:\s*"([^"]+)"""").find(body)?.groupValues?.get(1)
-        ?: body.substringAfter("url=").substringBefore("&").replace("%3A", ":").replace("%2F", "/")
-
-      if (url.isNotBlank()) {
-        scope.launch(Dispatchers.Main) {
-          onRemoteDownloadRequested(url, null)
+        var contentLength = 0
+        var line: String? = reader.readLine()
+        while (!line.isNullOrBlank()) {
+          if (line.startsWith("Content-Length:", ignoreCase = true)) {
+            contentLength = line.substringAfter(":").trim().toIntOrNull() ?: 0
+          }
+          line = reader.readLine()
         }
-        _serverState.value = _serverState.value.copy(lastCommand = "APK Download Pushed: $url")
-        sendJsonResponse(exchange, """{"success":true,"message":"Download started on Android device!","url":"$url"}""")
-        return
-      }
+
+        val body = if (contentLength > 0) {
+          val charArray = CharArray(contentLength)
+          var readCount = 0
+          while (readCount < contentLength) {
+            val r = reader.read(charArray, readCount, contentLength - readCount)
+            if (r == -1) break
+            readCount += r
+          }
+          String(charArray, 0, readCount)
+        } else {
+          ""
+        }
+
+        when {
+          path == "/" || path.startsWith("/?") -> {
+            val diag = diagnosticsProvider()
+            val html = getDashboardHtml(diag, pin)
+            sendResponse(output, 200, "text/html; charset=UTF-8", html.toByteArray(Charsets.UTF_8))
+          }
+          path.startsWith("/api/status") -> {
+            val diag = diagnosticsProvider()
+            val bm = context.getSystemService(Context.BATTERY_SERVICE) as? BatteryManager
+            val batteryLevel = bm?.getIntProperty(BatteryManager.BATTERY_PROPERTY_CAPACITY) ?: -1
+            val json = """
+              {
+                "device": "${diag?.deviceModel ?: Build.MODEL}",
+                "android": "${diag?.androidVersion ?: Build.VERSION.RELEASE}",
+                "battery": $batteryLevel,
+                "online": ${diag?.isOnline ?: true},
+                "network": "${diag?.networkType ?: "Wi-Fi"}",
+                "storageFreeGb": ${(diag?.freeStorageBytes ?: 0) / (1024.0 * 1024.0 * 1024.0)},
+                "storageTotalGb": ${(diag?.totalStorageBytes ?: 0) / (1024.0 * 1024.0 * 1024.0)},
+                "canInstallApk": ${diag?.canInstallPackages ?: false}
+              }
+            """.trimIndent()
+            sendResponse(output, 200, "application/json; charset=UTF-8", json.toByteArray(Charsets.UTF_8))
+          }
+          path.startsWith("/api/play-sound") -> {
+            playFindDeviceSound()
+            _serverState.value = _serverState.value.copy(lastCommand = "Alert Ring Triggered via Web")
+            val json = """{"success":true,"message":"Alert sound played on device!"}"""
+            sendResponse(output, 200, "application/json; charset=UTF-8", json.toByteArray(Charsets.UTF_8))
+          }
+          path.startsWith("/api/push-download") -> {
+            val url = Regex(""""url"\s*:\s*"([^"]+)"""").find(body)?.groupValues?.get(1)
+              ?: body.substringAfter("url=").substringBefore("&").replace("%3A", ":").replace("%2F", "/")
+            if (url.isNotBlank()) {
+              scope.launch(Dispatchers.Main) {
+                onRemoteDownloadRequested(url, null)
+              }
+              _serverState.value = _serverState.value.copy(lastCommand = "APK Download Pushed: $url")
+              val json = """{"success":true,"message":"Download started on Android device!","url":"$url"}"""
+              sendResponse(output, 200, "application/json; charset=UTF-8", json.toByteArray(Charsets.UTF_8))
+            } else {
+              val json = """{"success":false,"message":"Invalid download URL provided."}"""
+              sendResponse(output, 400, "application/json; charset=UTF-8", json.toByteArray(Charsets.UTF_8))
+            }
+          }
+          else -> {
+            val notFound = "404 Not Found"
+            sendResponse(output, 404, "text/plain", notFound.toByteArray(Charsets.UTF_8))
+          }
+        }
+      } catch (_: Exception) {}
     }
-    sendJsonResponse(exchange, """{"success":false,"message":"Invalid download URL provided."}""")
   }
 
-  private fun sendJsonResponse(exchange: HttpExchange, json: String) {
-    val bytes = json.toByteArray(Charsets.UTF_8)
-    exchange.responseHeaders.set("Content-Type", "application/json; charset=UTF-8")
-    exchange.responseHeaders.set("Access-Control-Allow-Origin", "*")
-    exchange.sendResponseHeaders(200, bytes.size.toLong())
-    exchange.responseBody.use { it.write(bytes) }
+  private fun sendResponse(output: OutputStream, statusCode: Int, contentType: String, body: ByteArray) {
+    val statusText = when (statusCode) {
+      200 -> "OK"
+      400 -> "Bad Request"
+      404 -> "Not Found"
+      else -> "OK"
+    }
+    val header = "HTTP/1.1 $statusCode $statusText\r\n" +
+      "Content-Type: $contentType\r\n" +
+      "Content-Length: ${body.size}\r\n" +
+      "Access-Control-Allow-Origin: *\r\n" +
+      "Connection: close\r\n\r\n"
+
+    output.write(header.toByteArray(Charsets.UTF_8))
+    output.write(body)
+    output.flush()
   }
 
   private fun generateRandomPin(): String {

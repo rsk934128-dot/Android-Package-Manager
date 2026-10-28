@@ -20,12 +20,14 @@ import kotlinx.coroutines.tasks.await
 
 class AuthManager(private val context: Context) {
 
-  private val auth: FirebaseAuth by lazy {
-    if (com.google.firebase.FirebaseApp.getApps(context).isEmpty()) {
-      runCatching { com.google.firebase.FirebaseApp.initializeApp(context) }
-    }
-    FirebaseAuth.getInstance()
-  }
+  private val auth: FirebaseAuth?
+    get() = runCatching {
+      if (com.google.firebase.FirebaseApp.getApps(context).isEmpty()) {
+        com.google.firebase.FirebaseApp.initializeApp(context)
+      }
+      FirebaseAuth.getInstance()
+    }.getOrNull()
+
   private val credentialManager: CredentialManager by lazy {
     CredentialManager.create(context)
   }
@@ -52,19 +54,28 @@ class AuthManager(private val context: Context) {
   }
 
   val currentUser: FirebaseUser?
-    get() = auth.currentUser
+    get() = auth?.currentUser
 
   fun authStateFlow(): Flow<FirebaseUser?> = callbackFlow {
-    val listener = FirebaseAuth.AuthStateListener { firebaseAuth ->
-      trySend(firebaseAuth.currentUser)
+    val firebaseAuth = auth
+    if (firebaseAuth == null) {
+      trySend(null)
+      awaitClose { }
+      return@callbackFlow
     }
-    auth.addAuthStateListener(listener)
-    trySend(auth.currentUser)
-    awaitClose { auth.removeAuthStateListener(listener) }
+    val listener = FirebaseAuth.AuthStateListener { fa ->
+      trySend(fa.currentUser)
+    }
+    firebaseAuth.addAuthStateListener(listener)
+    trySend(firebaseAuth.currentUser)
+    awaitClose {
+      runCatching { firebaseAuth.removeAuthStateListener(listener) }
+    }
   }
 
   suspend fun signInWithGoogle(activity: Activity): Result<FirebaseUser> {
     return runCatching {
+      val firebaseAuth = auth ?: error("Firebase Auth is not available on this device")
       val webClientId = getWebClientId()
 
       // Strict requirement: single option per request for reliable presentation on API 36
@@ -82,7 +93,7 @@ class AuthManager(private val context: Context) {
       val idToken = googleIdTokenCredential.idToken
 
       val firebaseCredential = GoogleAuthProvider.getCredential(idToken, null)
-      val authResult = auth.signInWithCredential(firebaseCredential).await()
+      val authResult = firebaseAuth.signInWithCredential(firebaseCredential).await()
       val user = authResult.user ?: error("Firebase user is null after authentication")
 
       user
@@ -98,6 +109,7 @@ class AuthManager(private val context: Context) {
 
   suspend fun trySilentSignIn(): Result<FirebaseUser> {
     return runCatching {
+      val firebaseAuth = auth ?: error("Firebase Auth is not available on this device")
       val webClientId = getWebClientId()
 
       val googleIdOption = GetGoogleIdOption.Builder()
@@ -115,14 +127,14 @@ class AuthManager(private val context: Context) {
       val idToken = googleIdTokenCredential.idToken
 
       val firebaseCredential = GoogleAuthProvider.getCredential(idToken, null)
-      val authResult = auth.signInWithCredential(firebaseCredential).await()
+      val authResult = firebaseAuth.signInWithCredential(firebaseCredential).await()
       authResult.user ?: error("Silent user is null")
     }
   }
 
   suspend fun signOut() {
     runCatching {
-      auth.signOut()
+      auth?.signOut()
       credentialManager.clearCredentialState(ClearCredentialStateRequest())
     }
   }

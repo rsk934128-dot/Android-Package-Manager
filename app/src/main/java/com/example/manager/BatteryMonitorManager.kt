@@ -63,10 +63,12 @@ class BatteryMonitorManager(private val context: Context) {
    * Generates a comprehensive real-time battery telemetry and background tasks drain report.
    */
   fun generateBatteryReport(): BatteryHealthReport {
-    val batteryIntent: Intent? = context.registerReceiver(
-      null,
-      IntentFilter(Intent.ACTION_BATTERY_CHANGED)
-    )
+    val batteryIntent: Intent? = runCatching {
+      context.registerReceiver(
+        null,
+        IntentFilter(Intent.ACTION_BATTERY_CHANGED)
+      )
+    }.getOrNull()
 
     val level = batteryIntent?.getIntExtra(BatteryManager.EXTRA_LEVEL, -1) ?: 50
     val scale = batteryIntent?.getIntExtra(BatteryManager.EXTRA_SCALE, -1) ?: 100
@@ -280,7 +282,13 @@ class BatteryMonitorManager(private val context: Context) {
       addAction(PowerManager.ACTION_POWER_SAVE_MODE_CHANGED)
     }
 
-    context.registerReceiver(receiver, filter)
+    runCatching {
+      if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.TIRAMISU) {
+        context.registerReceiver(receiver, filter, Context.RECEIVER_NOT_EXPORTED)
+      } else {
+        context.registerReceiver(receiver, filter)
+      }
+    }
     trySend(generateBatteryReport()) // Initial state
 
     awaitClose {

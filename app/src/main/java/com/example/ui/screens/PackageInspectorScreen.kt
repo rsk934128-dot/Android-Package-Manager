@@ -70,7 +70,8 @@ fun PackageInspectorScreen(
   onFilterChanged: (AppFilter) -> Unit,
   onAppSelected: (AppPackageItem) -> Unit,
   onRefresh: () -> Unit,
-  onBackupPackage: ((String) -> Unit)? = null
+  onBackupPackage: ((String) -> Unit)? = null,
+  onInspectPermissions: ((AppPackageItem) -> Unit)? = null
 ) {
   val totalCount = allApps.size
   val highRiskCount = allApps.count { it.threatLevel == ThreatLevel.HIGH || it.threatScore >= 25 }
@@ -266,7 +267,11 @@ fun PackageInspectorScreen(
           .weight(1f)
       ) {
         items(apps, key = { it.packageName }) { app ->
-          AppListItem(app = app, onClick = { onAppSelected(app) })
+          AppListItem(
+            app = app,
+            onClick = { onAppSelected(app) },
+            onInspectPermissions = if (onInspectPermissions != null) { { onInspectPermissions(app) } } else null
+          )
         }
         item {
           Spacer(modifier = Modifier.height(24.dp))
@@ -308,7 +313,8 @@ fun SummaryMiniCard(
 @Composable
 fun AppListItem(
   app: AppPackageItem,
-  onClick: () -> Unit
+  onClick: () -> Unit,
+  onInspectPermissions: (() -> Unit)? = null
 ) {
   Card(
     shape = RoundedCornerShape(12.dp),
@@ -414,6 +420,23 @@ fun AppListItem(
           fontWeight = FontWeight.Bold,
           color = badgeColor
         )
+      }
+
+      if (onInspectPermissions != null) {
+        Spacer(modifier = Modifier.width(4.dp))
+        IconButton(
+          onClick = onInspectPermissions,
+          modifier = Modifier
+            .size(36.dp)
+            .testTag("inspect_perms_${app.packageName}")
+        ) {
+          Icon(
+            imageVector = Icons.Default.Security,
+            contentDescription = "Inspect permissions for ${app.appName}",
+            tint = MaterialTheme.colorScheme.primary,
+            modifier = Modifier.size(20.dp)
+          )
+        }
       }
     }
   }

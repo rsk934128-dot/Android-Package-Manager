@@ -5,6 +5,7 @@ import androidx.lifecycle.AndroidViewModel
 import androidx.lifecycle.viewModelScope
 import android.app.Activity
 import com.example.manager.AppClonerManager
+import com.example.manager.AppPermissionManager
 import com.example.manager.ApkBackupManager
 import com.example.manager.ApkInstallerManager
 import com.example.manager.AuthManager
@@ -17,6 +18,7 @@ import com.example.manager.SystemDiagnosticsManager
 import com.example.manager.WebAppManager
 import com.example.model.ApkBackupItem
 import com.example.model.ClonedAppItem
+import com.example.model.DetailedPermissionItem
 import com.example.model.SavedWebApp
 import com.example.model.WebAppCategory
 import com.example.model.WebAppNotificationEvent
@@ -58,6 +60,7 @@ class MainViewModel(application: Application) : AndroidViewModel(application) {
   val webAppManager = WebAppManager(application)
   val appClonerManager = AppClonerManager(application)
   val apkBackupManager = ApkBackupManager(application)
+  val permissionManager = AppPermissionManager(application)
 
   val apkBackups: StateFlow<List<ApkBackupItem>> = apkBackupManager.backups
   private val _batchBackupProgress = MutableStateFlow<Triple<Int, Int, String>?>(null)
@@ -111,6 +114,9 @@ class MainViewModel(application: Application) : AndroidViewModel(application) {
 
   private val _selectedAppForDetail = MutableStateFlow<AppPackageItem?>(null)
   val selectedAppForDetail: StateFlow<AppPackageItem?> = _selectedAppForDetail.asStateFlow()
+
+  private val _selectedAppForPermissions = MutableStateFlow<AppPackageItem?>(null)
+  val selectedAppForPermissions: StateFlow<AppPackageItem?> = _selectedAppForPermissions.asStateFlow()
 
   private val _systemDiagnostic = MutableStateFlow<SystemDiagnostic?>(null)
   val systemDiagnostic: StateFlow<SystemDiagnostic?> = _systemDiagnostic.asStateFlow()
@@ -182,6 +188,18 @@ Shell Protection: com.protect2025
 
   fun selectAppDetail(app: AppPackageItem?) {
     _selectedAppForDetail.value = app
+  }
+
+  fun selectAppForPermissions(app: AppPackageItem?) {
+    _selectedAppForPermissions.value = app
+  }
+
+  fun loadPermissionsForPackage(packageName: String): List<DetailedPermissionItem> {
+    return permissionManager.getPermissionsForPackage(packageName)
+  }
+
+  fun createManagePermissionsIntent(packageName: String): android.content.Intent {
+    return permissionManager.createManagePermissionsIntent(packageName)
   }
 
   fun setManifestInput(text: String) {

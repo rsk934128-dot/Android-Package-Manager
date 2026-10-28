@@ -64,6 +64,7 @@ import com.example.model.AppPackageItem
 import com.example.model.DownloadStatus
 import com.example.ui.components.AppDetailSheet
 import com.example.ui.components.CloneAppDialog
+import com.example.ui.screens.AppPermissionsScreen
 import com.example.ui.screens.DiagnosticsScreen
 import com.example.ui.screens.DownloaderScreen
 import com.example.ui.screens.PackageInspectorScreen
@@ -114,13 +115,14 @@ class MainActivity : ComponentActivity() {
         val activeClonedApp by viewModel.activeClonedApp.collectAsStateWithLifecycle()
         val apkBackups by viewModel.apkBackups.collectAsStateWithLifecycle()
         val batchBackupProgress by viewModel.batchBackupProgress.collectAsStateWithLifecycle()
+        val selectedAppForPermissions by viewModel.selectedAppForPermissions.collectAsStateWithLifecycle()
 
         var appToCloneForNativeDialog by remember { mutableStateOf<AppPackageItem?>(null) }
 
         Scaffold(
           modifier = Modifier.fillMaxSize(),
           topBar = {
-            if (activeWebApp == null && activeClonedApp == null) {
+            if (activeWebApp == null && activeClonedApp == null && selectedAppForPermissions == null) {
               CenterAlignedTopAppBar(
               title = {
                 Row(verticalAlignment = Alignment.CenterVertically) {
@@ -258,7 +260,7 @@ class MainActivity : ComponentActivity() {
           }
         },
         bottomBar = {
-          if (activeWebApp == null && activeClonedApp == null) {
+          if (activeWebApp == null && activeClonedApp == null && selectedAppForPermissions == null) {
             NavigationBar(
               containerColor = MaterialTheme.colorScheme.surface,
               modifier = Modifier.testTag("bottom_nav_bar")
@@ -339,8 +341,23 @@ class MainActivity : ComponentActivity() {
               .fillMaxSize()
               .padding(innerPadding)
           ) {
-            when (activeTab) {
-              0 -> DownloaderScreen(
+            if (selectedAppForPermissions != null) {
+              AppPermissionsScreen(
+                app = selectedAppForPermissions!!,
+                allApps = installedApps,
+                onBack = { viewModel.selectAppForPermissions(null) },
+                onSelectDifferentApp = { viewModel.selectAppForPermissions(it) },
+                onOpenSettings = { pkg ->
+                  val intent = viewModel.createManagePermissionsIntent(pkg)
+                  runCatching { startActivity(intent) }.onFailure {
+                    viewModel.installerManager.openAppDetails(pkg)
+                  }
+                },
+                onLoadPermissions = { pkg -> viewModel.loadPermissionsForPackage(pkg) }
+              )
+            } else {
+              when (activeTab) {
+                0 -> DownloaderScreen(
                 currentDownload = currentDownload,
                 downloadedFiles = downloadedFiles,
                 apkBackups = apkBackups,
@@ -391,6 +408,7 @@ class MainActivity : ComponentActivity() {
                 onSearchChanged = { viewModel.setSearchQuery(it) },
                 onFilterChanged = { viewModel.setFilter(it) },
                 onAppSelected = { app -> viewModel.selectAppDetail(app) },
+                onInspectPermissions = { app -> viewModel.selectAppForPermissions(app) },
                 onRefresh = { viewModel.refreshInstalledApps() },
                 onBackupPackage = { pkgName ->
                   viewModel.backupInstalledPackage(pkgName) { res ->
@@ -482,6 +500,7 @@ class MainActivity : ComponentActivity() {
                 }
               )
             }
+          }
 
             // Bottom sheet for app details
             selectedAppDetail?.let { app ->
@@ -512,6 +531,10 @@ class MainActivity : ComponentActivity() {
                       Toast.makeText(this@MainActivity, "Backup failed: ${it.localizedMessage}", Toast.LENGTH_LONG).show()
                     }
                   }
+                },
+                onInspectPermissions = { appToInspect ->
+                  viewModel.selectAppDetail(null)
+                  viewModel.selectAppForPermissions(appToInspect)
                 }
               )
             }

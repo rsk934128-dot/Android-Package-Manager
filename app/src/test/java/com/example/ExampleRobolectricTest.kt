@@ -310,4 +310,31 @@ class ExampleRobolectricTest {
     org.junit.Assert.assertTrue(webClientId.isNotBlank())
     org.junit.Assert.assertTrue(webClientId.contains(".apps.googleusercontent.com"))
   }
+
+  @Test
+  fun `test AppPermissionManager inspects package permissions and creates settings intent`() {
+    val context = ApplicationProvider.getApplicationContext<Context>()
+    val permManager = com.example.manager.AppPermissionManager(context)
+
+    // Inspect own package permissions declared in AndroidManifest
+    val permissions = permManager.getPermissionsForPackage(context.packageName)
+    org.junit.Assert.assertNotNull(permissions)
+    org.junit.Assert.assertTrue("Should have declared permissions", permissions.isNotEmpty())
+
+    // Validate permission item properties
+    val firstPerm = permissions.first()
+    org.junit.Assert.assertTrue(firstPerm.fullName.isNotBlank())
+    org.junit.Assert.assertTrue(firstPerm.simpleName.isNotBlank())
+    org.junit.Assert.assertTrue(firstPerm.label.isNotBlank())
+    org.junit.Assert.assertTrue(firstPerm.protectionLevel.isNotBlank())
+    org.junit.Assert.assertTrue(firstPerm.riskRecommendation.isNotBlank())
+
+    // Verify settings intent creation
+    val settingsIntent = permManager.createManagePermissionsIntent(context.packageName)
+    org.junit.Assert.assertNotNull(settingsIntent)
+    org.junit.Assert.assertTrue(
+      settingsIntent.action == "android.intent.action.MANAGE_APP_PERMISSIONS" ||
+        settingsIntent.action == android.provider.Settings.ACTION_APPLICATION_DETAILS_SETTINGS
+    )
+  }
 }

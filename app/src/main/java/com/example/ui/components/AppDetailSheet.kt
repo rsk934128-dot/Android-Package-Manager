@@ -63,7 +63,8 @@ fun AppDetailSheet(
   onOpenSettings: (String) -> Unit,
   onUninstall: (String) -> Unit,
   onClone: ((AppPackageItem) -> Unit)? = null,
-  onBackup: ((AppPackageItem) -> Unit)? = null
+  onBackup: ((AppPackageItem) -> Unit)? = null,
+  onInspectPermissions: ((AppPackageItem) -> Unit)? = null
 ) {
   val sheetState = rememberModalBottomSheetState(skipPartiallyExpanded = true)
   val dateFormat = SimpleDateFormat("yyyy-MM-dd HH:mm", Locale.getDefault())
@@ -283,12 +284,29 @@ fun AppDetailSheet(
         }
 
         Spacer(modifier = Modifier.height(16.dp))
-        Text(
-          text = "Declared Permissions (${app.permissions.size})",
-          style = MaterialTheme.typography.titleMedium,
-          fontWeight = FontWeight.Bold,
-          color = MaterialTheme.colorScheme.onSurface
-        )
+        Row(
+          verticalAlignment = Alignment.CenterVertically,
+          horizontalArrangement = Arrangement.SpaceBetween,
+          modifier = Modifier.fillMaxWidth()
+        ) {
+          Text(
+            text = "Declared Permissions (${app.permissions.size})",
+            style = MaterialTheme.typography.titleMedium,
+            fontWeight = FontWeight.Bold,
+            color = MaterialTheme.colorScheme.onSurface
+          )
+
+          if (onInspectPermissions != null) {
+            FilledTonalButton(
+              onClick = { onInspectPermissions(app) },
+              modifier = Modifier.testTag("inspect_permissions_sheet_button")
+            ) {
+              Icon(Icons.Default.Security, contentDescription = null, modifier = Modifier.size(16.dp))
+              Spacer(modifier = Modifier.width(4.dp))
+              Text("Inspect Status", fontSize = 11.sp, fontWeight = FontWeight.Bold)
+            }
+          }
+        }
         Spacer(modifier = Modifier.height(8.dp))
       }
 

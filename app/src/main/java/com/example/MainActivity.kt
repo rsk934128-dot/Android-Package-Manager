@@ -35,6 +35,7 @@ import androidx.compose.material3.BadgedBox
 import androidx.compose.material3.Button
 import androidx.compose.material3.ButtonDefaults
 import androidx.compose.material3.CenterAlignedTopAppBar
+import androidx.compose.material3.CircularProgressIndicator
 import androidx.compose.material3.ExperimentalMaterial3Api
 import androidx.compose.material3.Icon
 import androidx.compose.material3.IconButton
@@ -46,6 +47,7 @@ import androidx.compose.material3.Surface
 import androidx.compose.material3.Text
 import androidx.compose.material3.TopAppBarDefaults
 import androidx.compose.runtime.Composable
+import androidx.compose.runtime.LaunchedEffect
 import androidx.compose.runtime.getValue
 import androidx.compose.runtime.mutableStateOf
 import androidx.compose.runtime.remember
@@ -116,6 +118,15 @@ class MainActivity : ComponentActivity() {
         val apkBackups by viewModel.apkBackups.collectAsStateWithLifecycle()
         val batchBackupProgress by viewModel.batchBackupProgress.collectAsStateWithLifecycle()
         val selectedAppForPermissions by viewModel.selectedAppForPermissions.collectAsStateWithLifecycle()
+        val isSigningIn by viewModel.isSigningIn.collectAsStateWithLifecycle()
+        val authStatusEvent by viewModel.authStatusEvent.collectAsStateWithLifecycle()
+
+        LaunchedEffect(authStatusEvent) {
+          authStatusEvent?.let { (success, message) ->
+            Toast.makeText(this@MainActivity, message, if (success) Toast.LENGTH_SHORT else Toast.LENGTH_LONG).show()
+            viewModel.clearAuthStatusEvent()
+          }
+        }
 
         var appToCloneForNativeDialog by remember { mutableStateOf<AppPackageItem?>(null) }
 
@@ -230,26 +241,42 @@ class MainActivity : ComponentActivity() {
                 } else {
                   Button(
                     onClick = {
+                      Toast.makeText(this@MainActivity, "Opening Google Sign-In…", Toast.LENGTH_SHORT).show()
                       viewModel.signInWithGoogle(this@MainActivity)
                     },
+                    enabled = !isSigningIn,
                     modifier = Modifier
                       .padding(end = 8.dp)
-                      .height(32.dp)
+                      .height(36.dp)
                       .testTag("google_sign_in_button"),
-                    contentPadding = PaddingValues(horizontal = 10.dp, vertical = 0.dp),
+                    contentPadding = PaddingValues(horizontal = 12.dp, vertical = 0.dp),
                     colors = ButtonDefaults.buttonColors(containerColor = MaterialTheme.colorScheme.primary)
                   ) {
-                    Icon(
-                      Icons.Default.AccountCircle,
-                      contentDescription = null,
-                      modifier = Modifier.size(16.dp)
-                    )
-                    Spacer(modifier = Modifier.width(4.dp))
-                    Text(
-                      text = "Sign In",
-                      fontSize = 11.sp,
-                      fontWeight = FontWeight.Bold
-                    )
+                    if (isSigningIn) {
+                      CircularProgressIndicator(
+                        modifier = Modifier.size(14.dp),
+                        strokeWidth = 2.dp,
+                        color = MaterialTheme.colorScheme.onPrimary
+                      )
+                      Spacer(modifier = Modifier.width(6.dp))
+                      Text(
+                        text = "Signing In…",
+                        fontSize = 11.sp,
+                        fontWeight = FontWeight.Bold
+                      )
+                    } else {
+                      Icon(
+                        Icons.Default.AccountCircle,
+                        contentDescription = null,
+                        modifier = Modifier.size(16.dp)
+                      )
+                      Spacer(modifier = Modifier.width(4.dp))
+                      Text(
+                        text = "Sign In",
+                        fontSize = 11.sp,
+                        fontWeight = FontWeight.Bold
+                      )
+                    }
                   }
                 }
               },

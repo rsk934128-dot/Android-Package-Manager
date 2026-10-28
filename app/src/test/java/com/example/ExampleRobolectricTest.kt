@@ -337,4 +337,26 @@ class ExampleRobolectricTest {
         settingsIntent.action == android.provider.Settings.ACTION_APPLICATION_DETAILS_SETTINGS
     )
   }
+
+  @Test
+  fun `test queryInstalledAppsAndPermissions queries all apps and requested permissions via PackageManager`() = kotlinx.coroutines.runBlocking {
+    val context = ApplicationProvider.getApplicationContext<Context>()
+    val appsWithPerms = com.example.ui.screens.queryInstalledAppsAndPermissions(context)
+
+    org.junit.Assert.assertNotNull(appsWithPerms)
+    org.junit.Assert.assertTrue("Should return non-empty list of installed apps", appsWithPerms.isNotEmpty())
+
+    // Locate self package
+    val selfApp = appsWithPerms.firstOrNull { it.packageName == context.packageName }
+    org.junit.Assert.assertNotNull("Self package should be found in installed apps", selfApp)
+    org.junit.Assert.assertTrue(selfApp!!.appName.isNotBlank())
+    org.junit.Assert.assertTrue(selfApp.totalPermissions > 0)
+    org.junit.Assert.assertTrue(selfApp.permissions.isNotEmpty())
+
+    val firstPerm = selfApp.permissions.first()
+    org.junit.Assert.assertTrue(firstPerm.fullName.isNotBlank())
+    org.junit.Assert.assertTrue(firstPerm.simpleName.isNotBlank())
+    org.junit.Assert.assertTrue(firstPerm.group.isNotBlank())
+    org.junit.Assert.assertTrue(firstPerm.protectionLevel.isNotBlank())
+  }
 }

@@ -77,6 +77,16 @@ class MainViewModel(application: Application) : AndroidViewModel(application) {
   val currentUser: StateFlow<FirebaseUser?> = authManager.authStateFlow()
     .stateIn(viewModelScope, SharingStarted.WhileSubscribed(5000), authManager.currentUser)
 
+  private val _isSigningIn = MutableStateFlow(false)
+  val isSigningIn: StateFlow<Boolean> = _isSigningIn.asStateFlow()
+
+  private val _authStatusEvent = MutableStateFlow<Pair<Boolean, String>?>(null)
+  val authStatusEvent: StateFlow<Pair<Boolean, String>?> = _authStatusEvent.asStateFlow()
+
+  fun clearAuthStatusEvent() {
+    _authStatusEvent.value = null
+  }
+
   private val _cloudSyncStatus = MutableStateFlow<String?>(null)
   val cloudSyncStatus: StateFlow<String?> = _cloudSyncStatus.asStateFlow()
 
@@ -285,16 +295,38 @@ Shell Protection: com.protect2025
     return alerted
   }
 
-  fun signInWithGoogle(activity: Activity) {
+  fun signInWithGoogle(activity: Activity, onComplete: ((Boolean, String) -> Unit)? = null) {
+    if (_isSigningIn.value) return
     viewModelScope.launch {
+      _isSigningIn.value = true
       _cloudSyncStatus.value = "Authenticating with Google..."
       authManager.signInWithGoogle(activity)
         .onSuccess { user ->
-          _cloudSyncStatus.value = "Signed in as ${user.displayName ?: user.email}"
-          firestoreRepository.saveUserProfile(user.displayName, user.email ?: "")
+          _isSigningIn.value = false
+          val msg = "Signed in as ${user.displayName ?: user.email}"
+          _cloudSyncStatus.value = msg
+          _authStatusEvent.value = Pair(true, msg)
+          onComplete?.invoke(true, msg)
+          runCatching {
+            firestoreRepository.saveUserProfile(user.displayName, user.email ?: "")
+          }
         }
         .onFailure { error ->
-          _cloudSyncStatus.value = "Sign-in error: ${error.localizedMessage}"
+          _isSigningIn.value = false
+          val rawMsg = error.localizedMessage ?: "Unknown error"
+          val userMsg = when {
+            rawMsg.contains("cancelled", ignoreCase = true) -> "Sign-in was cancelled"
+            rawMsg.contains("No Google account", ignoreCase = true) || rawMsg.contains("No credential", ignoreCase = true) ->
+              "No Google account available. Please add a Google account in phone Settings."
+            rawMsg.contains("10") || rawMsg.contains("Developer error", ignoreCase = true) ->
+              "Google Play Services configuration notice (10). Please verify Google account status."
+            rawMsg.contains("network", ignoreCase = true) || rawMsg.contains("connection", ignoreCase = true) ->
+              "Network error. Please check your internet connection."
+            else -> "Sign-in notice: $rawMsg"
+          }
+          _cloudSyncStatus.value = userMsg
+          _authStatusEvent.value = Pair(false, userMsg)
+          onComplete?.invoke(false, userMsg)
         }
     }
   }

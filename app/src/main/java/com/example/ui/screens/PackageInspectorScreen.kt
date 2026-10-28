@@ -99,29 +99,48 @@ fun PackageInspectorScreen(
       Tab(
         selected = inspectorMode == 0,
         onClick = { inspectorMode = 0 },
-        text = { Text("Names & Version Codes", fontWeight = FontWeight.Bold, fontSize = 12.sp) },
-        modifier = Modifier.testTag("tab_packages_version_codes")
+        text = { Text("App Permissions", fontWeight = FontWeight.Bold, fontSize = 12.sp) },
+        modifier = Modifier.testTag("tab_app_permissions")
       )
       Tab(
         selected = inspectorMode == 1,
         onClick = { inspectorMode = 1 },
-        text = { Text("Threat & Permissions", fontWeight = FontWeight.Bold, fontSize = 12.sp) },
-        modifier = Modifier.testTag("tab_threat_permissions")
+        text = { Text("Threat Audit", fontWeight = FontWeight.Bold, fontSize = 12.sp) },
+        modifier = Modifier.testTag("tab_threat_audit")
+      )
+      Tab(
+        selected = inspectorMode == 2,
+        onClick = { inspectorMode = 2 },
+        text = { Text("Version Codes", fontWeight = FontWeight.Bold, fontSize = 12.sp) },
+        modifier = Modifier.testTag("tab_packages_version_codes")
       )
     }
 
-    if (inspectorMode == 0) {
-      InstalledPackagesList(
-        onPackageClick = { pkg ->
-          val matching = allApps.firstOrNull { it.packageName == pkg.packageName }
-          if (matching != null) {
-            onAppSelected(matching)
+    when (inspectorMode) {
+      0 -> {
+        InstalledAppsPermissionsScreen(
+          showHeader = false,
+          onAppClick = { appWithPerms ->
+            val matching = allApps.firstOrNull { it.packageName == appWithPerms.packageName }
+            if (matching != null) {
+              onAppSelected(matching)
+            }
           }
-        },
-        onBackupClick = if (onBackupPackage != null) { { pkg -> onBackupPackage(pkg.packageName) } } else null,
-        showHeader = true
-      )
-    } else {
+        )
+      }
+      2 -> {
+        InstalledPackagesList(
+          onPackageClick = { pkg ->
+            val matching = allApps.firstOrNull { it.packageName == pkg.packageName }
+            if (matching != null) {
+              onAppSelected(matching)
+            }
+          },
+          onBackupClick = if (onBackupPackage != null) { { pkg -> onBackupPackage(pkg.packageName) } } else null,
+          showHeader = true
+        )
+      }
+      else -> {
 
     // Search bar & refresh
     Row(
@@ -279,6 +298,7 @@ fun PackageInspectorScreen(
       }
     }
   }
+}
 }
 }
 

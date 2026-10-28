@@ -7,6 +7,7 @@ import androidx.credentials.ClearCredentialStateRequest
 import androidx.credentials.CredentialManager
 import androidx.credentials.GetCredentialRequest
 import androidx.credentials.exceptions.GetCredentialCancellationException
+import androidx.credentials.exceptions.NoCredentialException
 import com.google.android.libraries.identity.googleid.GetGoogleIdOption
 import com.google.android.libraries.identity.googleid.GetSignInWithGoogleOption
 import com.google.android.libraries.identity.googleid.GoogleIdTokenCredential
@@ -34,13 +35,12 @@ class AuthManager(private val context: Context) {
 
   companion object {
     private const val TAG = "AppPulseAuth"
-    private const val FALLBACK_WEB_CLIENT_ID = "597177743295-mkpf8rludkuk0a8eu89glv1l89p2bac8.apps.googleusercontent.com"
   }
 
   /**
    * Safely retrieves the Google Web Client ID:
-   * 1. Resolves dynamically from Google Services plugin generated resources (default_web_client_id) if present.
-   * 2. Falls back gracefully to the project client ID if google-services.json is absent (e.g. in GitHub Actions CI).
+   * 1. Resolves dynamically from Google Services plugin generated resources (default_web_client_id).
+   * 2. Reflectively looks up R.string.default_web_client_id if needed.
    */
   fun getWebClientId(): String {
     val resId = context.resources.getIdentifier("default_web_client_id", "string", context.packageName)
@@ -50,7 +50,11 @@ class AuthManager(private val context: Context) {
         return resString
       }
     }
-    return FALLBACK_WEB_CLIENT_ID
+    return runCatching {
+      val rField = com.example.R.string::class.java.getField("default_web_client_id")
+      val id = rField.getInt(null)
+      context.getString(id)
+    }.getOrDefault("")
   }
 
   val currentUser: FirebaseUser?
@@ -77,20 +81,44 @@ class AuthManager(private val context: Context) {
     return runCatching {
       val firebaseAuth = auth ?: error("Firebase Auth is not available on this device")
       val webClientId = getWebClientId()
+      if (webClientId.isBlank()) {
+        error("Google Web Client ID is not configured in google-services.json")
+      }
 
-      // Strict requirement: single option per request for reliable presentation on API 36
-      val signInOption = GetSignInWithGoogleOption.Builder(serverClientId = webClientId)
-        .build()
+      // 1. Try GetGoogleIdOption with filterByAuthorizedAccounts=false to prompt account picker
+      val credential = try {
+        val googleIdOption = GetGoogleIdOption.Builder()
+          .setFilterByAuthorizedAccounts(false)
+          .setServerClientId(webClientId)
+          .setAutoSelectEnabled(false)
+          .build()
 
-      val request = GetCredentialRequest.Builder()
-        .addCredentialOption(signInOption)
-        .build()
+        val request = GetCredentialRequest.Builder()
+          .addCredentialOption(googleIdOption)
+          .build()
 
-      val result = credentialManager.getCredential(request = request, context = activity)
-      val credential = result.credential
+        credentialManager.getCredential(request = request, context = activity).credential
+      } catch (e: Exception) {
+        if (e is GetCredentialCancellationException) throw e
+        Log.w(TAG, "GetGoogleIdOption exception (${e.localizedMessage}), attempting fallback with GetSignInWithGoogleOption")
 
-      val googleIdTokenCredential = GoogleIdTokenCredential.createFrom(credential.data)
-      val idToken = googleIdTokenCredential.idToken
+        // 2. Fallback to GetSignInWithGoogleOption
+        val signInOption = GetSignInWithGoogleOption.Builder(serverClientId = webClientId)
+          .build()
+        val fallbackRequest = GetCredentialRequest.Builder()
+          .addCredentialOption(signInOption)
+          .build()
+
+        credentialManager.getCredential(request = fallbackRequest, context = activity).credential
+      }
+
+      val idToken = try {
+        GoogleIdTokenCredential.createFrom(credential.data).idToken
+      } catch (e: Exception) {
+        credential.data.getString("com.google.android.libraries.identity.googleid.BUNDLE_KEY_ID_TOKEN")
+          ?: credential.data.getString("id_token")
+          ?: error("Failed to extract ID token from Google Credential: ${e.localizedMessage}")
+      }
 
       val firebaseCredential = GoogleAuthProvider.getCredential(idToken, null)
       val authResult = firebaseAuth.signInWithCredential(firebaseCredential).await()
@@ -98,12 +126,20 @@ class AuthManager(private val context: Context) {
 
       user
     }.recoverCatching { exception ->
-      if (exception is GetCredentialCancellationException) {
-        Log.w(TAG, "Interactive Google Sign-In was cancelled by user: ${exception.localizedMessage}")
-      } else {
-        Log.e(TAG, "Google Sign-In failed: ${exception.localizedMessage}", exception)
+      when (exception) {
+        is GetCredentialCancellationException -> {
+          Log.i(TAG, "Interactive Google Sign-In was cancelled by user")
+          throw Exception("Sign-in was cancelled by user")
+        }
+        is NoCredentialException -> {
+          Log.w(TAG, "No Google accounts available on device: ${exception.localizedMessage}")
+          throw Exception("No Google account found on device. Please sign in to Google in device Settings.")
+        }
+        else -> {
+          Log.e(TAG, "Google Sign-In failed: ${exception.localizedMessage}", exception)
+          throw exception
+        }
       }
-      throw exception
     }
   }
 
@@ -111,6 +147,7 @@ class AuthManager(private val context: Context) {
     return runCatching {
       val firebaseAuth = auth ?: error("Firebase Auth is not available on this device")
       val webClientId = getWebClientId()
+      if (webClientId.isBlank()) error("Web Client ID is empty")
 
       val googleIdOption = GetGoogleIdOption.Builder()
         .setFilterByAuthorizedAccounts(true)
